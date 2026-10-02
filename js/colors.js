@@ -40,8 +40,12 @@ export function normalizeColor(value) {
   if (/^#[0-9a-f]{6}$/.test(v)) return v;
   if (/^#[0-9a-f]{3}$/.test(v)) return '#' + [...v.slice(1)].map((c) => c + c).join('');
   const rgb = v.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
-  if (rgb) return rgbToHex({ r: +rgb[1], g: +rgb[2], b: +rgb[3] });
-  return NAMED[v] ?? null;
+  if (rgb) {
+    const r = +rgb[1], g = +rgb[2], b = +rgb[3];
+    if (r > 255 || g > 255 || b > 255) return null;
+    return rgbToHex({ r, g, b });
+  }
+  return Object.hasOwn(NAMED, v) ? NAMED[v] : null;
 }
 
 // sRGB (0–255) → CIELAB, D65 white point.
