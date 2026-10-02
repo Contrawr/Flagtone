@@ -83,6 +83,36 @@ test('infinite: reshuffles the pool and never repeats back to back', () => {
   assert.equal(game.isOver(), false);
 });
 
+test('infinite: the swap branch fires when a refill starts with the last code shown', () => {
+  const size = poolFor('impossible').length;
+  // First shuffle: identity (j = i), so the last code shown is the pool's last.
+  // Second shuffle: the first step (i = size - 1) uses j = 0, moving that same code
+  // to the front; every later step is identity. Without the guard the refill would
+  // show the last code twice in a row.
+  let calls = 0;
+  const random = () => (++calls === size ? 0 : 0.999);
+  const game = new Game({ score: fixedScore, random });
+  game.start('infinite', 'impossible');
+  let last;
+  for (let i = 0; i < size; i++) last = game.nextFlagCode();
+  assert.equal(last, poolFor('impossible')[size - 1].code);
+  const after = game.nextFlagCode();
+  assert.equal(calls, 2 * (size - 1));
+  assert.notEqual(after, last);
+});
+
+test('standard: a refill after failed loads never repeats a played flag', () => {
+  const game = new Game({ score: fixedScore });
+  game.start('standard', 'impossible');
+  const size = poolFor('impossible').length;
+  // Failed loads consume codes without a submit.
+  for (let i = 0; i < size - 1; i++) game.nextFlagCode();
+  const played = game.nextFlagCode();
+  game.submit(played, '8', '#000000');
+  // The queue is now empty; keep drawing across several refills.
+  for (let i = 0; i < size * 2; i++) assert.notEqual(game.nextFlagCode(), played);
+});
+
 test('result carries name, colors and score', () => {
   const game = new Game();
   game.start('standard', 'easy');
@@ -123,4 +153,15 @@ test('throwing storage does not break the game', () => {
   play(game, [1, 2, 3, 4, 5]);
   assert.equal(game.isOver(), true);
   assert.equal(game.bestFor('standard', 'easy'), null);
+});
+
+test('a corrupt stored best is ignored and replaced', () => {
+  const storage = memoryStorage();
+  storage.data['geopaint:best:standard:easy'] = 'abc';
+  const game = new Game({ storage, score: fixedScore });
+  assert.equal(game.bestFor('standard', 'easy'), null);
+  game.start('standard', 'easy');
+  play(game, [8, 8, 8, 8, 8]);
+  assert.equal(game.isNewBest, true);
+  assert.equal(game.bestFor('standard', 'easy'), 40);
 });

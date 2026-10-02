@@ -38,7 +38,12 @@ export class Game {
   // it runs out and never shows the same flag twice in a row.
   nextFlagCode() {
     if (this.queue.length === 0) {
-      const codes = poolFor(this.tier).map((f) => f.code);
+      let codes = poolFor(this.tier).map((f) => f.code);
+      if (this.mode === 'standard') {
+        // Failed loads consume codes, so a refill must not bring back played flags.
+        const played = new Set(this.results.map((r) => r.code));
+        codes = codes.filter((c) => !played.has(c));
+      }
       this.queue = shuffle(codes, this.random);
       if (this.queue[0] === this.lastCode && this.queue.length > 1) {
         [this.queue[0], this.queue[1]] = [this.queue[1], this.queue[0]];
@@ -79,7 +84,9 @@ export class Game {
   bestFor(mode, tier) {
     try {
       const raw = this.storage?.getItem(`geopaint:best:${mode}:${tier}`);
-      return raw == null ? null : Number(raw);
+      if (raw == null) return null;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : null;
     } catch {
       return null;
     }
