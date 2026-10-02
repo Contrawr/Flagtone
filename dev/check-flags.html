@@ -24,12 +24,15 @@
 
     const grid = document.getElementById('grid');
     const bad = [];
+    let fallback = 0;
     for (const f of FLAGS) {
       const card = document.createElement('div');
       card.className = 'card';
       card.dataset.code = f.code;
+      let failed = false;
       try {
-        const { svg, candidates } = await analyzeFlag(f.code);
+        const { svg, candidates, usedFallback } = await analyzeFlag(f.code);
+        if (usedFallback) fallback++;
         svg.removeAttribute('width');
         svg.removeAttribute('height');
         card.append(svg);
@@ -42,17 +45,18 @@
           chips.append(i);
         }
         card.append(chips);
-        if (candidates.length === 0) bad.push(`${f.code}: no candidates`);
+        if (candidates.length === 0) { failed = true; bad.push(`${f.code}: no candidates`); }
       } catch (err) {
+        failed = true;
         bad.push(`${f.code}: ${err.message}`);
       }
-      if (bad.at(-1)?.startsWith(f.code + ':')) card.classList.add('bad');
+      if (failed) card.classList.add('bad');
       card.append(`${f.code} · ${f.name} · ${f.tier}`);
       grid.append(card);
     }
     document.getElementById('summary').textContent =
-      `${FLAGS.length} flags checked, ${bad.length} problems${bad.length ? ': ' + bad.join(', ') : ''}`;
-    window.checkResult = { total: FLAGS.length, bad };
+      `${FLAGS.length} flags checked, ${bad.length} problems, ${fallback} used the canvas fallback${bad.length ? ': ' + bad.join(', ') : ''}`;
+    window.checkResult = { total: FLAGS.length, bad, fallback };
   </script>
 </body>
 </html>
