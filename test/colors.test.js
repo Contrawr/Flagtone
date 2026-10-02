@@ -32,6 +32,10 @@ test('normalizeColor', () => {
   assert.equal(normalizeColor('url(#a)'), null);
   assert.equal(normalizeColor('currentColor'), null);
   assert.equal(normalizeColor(null), null);
+  assert.equal(normalizeColor('rgb(300, 0, 0)'), null);
+  assert.equal(normalizeColor('constructor'), null);
+  assert.equal(normalizeColor(''), null);
+  assert.equal(normalizeColor('#ggg'), null);
 });
 
 test('rgbToLab reference values', () => {
