@@ -72,19 +72,19 @@ Visual style: a warm off-white background, rounded chunky controls, and a yellow
 
 `flagLoader.js` does this for each flag:
 
-1. Fetch the SVG text and parse it with `DOMParser`.
-2. Collect the fill color of every element:
-   - from the `fill` attribute or `style="fill:…"`;
+1. Fetch the SVG text (aborting after 8 s) and parse it with `DOMParser`.
+2. Collect the fill and stroke colors of every element (some flags draw regions as strokes):
+   - from the `fill`/`stroke` attributes or `style="fill:…"` / `style="stroke:…"`;
    - normalized to lowercase 6-digit hex (`#fff` → `#ffffff`, named colors via a small lookup);
    - skipping `none`, `url(...)` and `currentColor`.
 3. Render the SVG to an offscreen 160×120 canvas and count pixels per fill color. A pixel counts toward a color if it lies within RGB distance 12 of it, which ignores anti-aliased edges.
-4. Candidates are fill colors that cover ≥ 8% of the pixels. Pick one at random.
+4. Candidates are fill or stroke colors that cover ≥ 8% of the pixels. Pick one at random.
 5. If no color qualifies, or the fetch or parse fails, discard the flag and draw another. After 5 failures in a row, show an error with a Retry button.
 
 Recoloring:
 - The round renders the parsed SVG inline.
-- Every element whose normalized fill equals the hidden color is tagged `data-hidden="1"`.
-- On slider input, those elements get their `fill` set to the current color.
+- Every element whose normalized fill equals the hidden color, and every element whose normalized stroke equals it, is remembered along with its original inline value.
+- On slider input, those elements get their `fill` (or `stroke`) set to the current color; the reveal restores the originals.
 - Emblem details that share the hidden color are recolored too, which is intended: the player is matching that color.
 
 Flags are prefetched one round ahead so the next flag shows instantly.

@@ -7,6 +7,7 @@ export const flagUrl = (code) =>
 
 export const MIN_SHARE = 0.08;
 const MATCH_TOLERANCE = 12;
+const FETCH_TIMEOUT_MS = 8000;
 const RASTER_W = 160;
 const RASTER_H = 120;
 const SHAPES = new Set(['path', 'rect', 'circle', 'ellipse', 'polygon', 'polyline', 'text']);
@@ -45,10 +46,27 @@ function fillOf(el) {
   return normalizeColor(el.style?.fill || el.getAttribute('fill') || null);
 }
 
+function strokeOf(el) {
+  return normalizeColor(el.style?.stroke || el.getAttribute('stroke') || null);
+}
+
+// The flag markup comes from a CDN, so strip anything executable before it is
+// inserted into the page.
+function sanitizeSvg(svg) {
+  for (const el of svg.querySelectorAll('script, foreignObject')) el.remove();
+  for (const el of [svg, ...svg.querySelectorAll('*')]) {
+    for (const attr of [...el.attributes]) {
+      if (attr.name.toLowerCase().startsWith('on')) el.removeAttribute(attr.name);
+    }
+  }
+}
+
 function parseSvg(text) {
   const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
   if (doc.querySelector('parsererror')) throw new Error('SVG parse error');
-  return document.importNode(doc.documentElement, true);
+  const svg = document.importNode(doc.documentElement, true);
+  sanitizeSvg(svg);
+  return svg;
 }
 
 // Shapes with no fill anywhere up the tree render black by default. Make that
@@ -66,21 +84,21 @@ function makeDefaultFillsExplicit(svg) {
   }
 }
 
-function collectFills(svg) {
+// Every fill and stroke color in the SVG: some flags draw whole regions as strokes.
+function collectColors(svg) {
   const set = new Set();
   for (const el of svg.querySelectorAll('*')) {
-    const hex = fillOf(el);
-    if (hex) set.add(hex);
+    for (const hex of [fillOf(el), strokeOf(el)]) if (hex) set.add(hex);
   }
   return [...set];
 }
 
-// Fallback when the canvas can't be read: fills of top-level shapes (usually stripes).
-function topLevelFills(svg) {
+// Fallback when the canvas can't be read: colors of top-level shapes (usually stripes).
+function topLevelColors(svg) {
   const set = new Set();
   for (const el of svg.children) {
-    const hex = fillOf(el);
-    if (hex && el.localName !== 'defs') set.add(hex);
+    if (el.localName === 'defs') continue;
+    for (const hex of [fillOf(el), strokeOf(el)]) if (hex) set.add(hex);
   }
   return [...set];
 }
@@ -117,32 +135,40 @@ function rasterize(svg) {
 
 // Fetch + parse + find hideable colors. Used by loadFlag and the dev check page.
 export async function analyzeFlag(code) {
-  const res = await fetch(flagUrl(code));
+  const res = await fetch(flagUrl(code), { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const svg = parseSvg(await res.text());
   makeDefaultFillsExplicit(svg);
-  const palette = collectFills(svg);
+  const palette = collectColors(svg);
   let candidates;
   let usedFallback = false;
   try {
     const { counts, total } = tallyColors(await rasterize(svg), palette);
     candidates = pickCandidates(counts, total);
   } catch (err) {
-    console.warn(`Flag ${code}: canvas read failed, using top-level fills`, err);
-    candidates = topLevelFills(svg);
+    console.warn(`Flag ${code}: canvas read failed, using top-level colors`, err);
+    candidates = topLevelColors(svg);
     usedFallback = true;
   }
   return { svg, candidates, usedFallback };
+}
+
+// Elements whose `prop` (fill or stroke) is the hidden color, each with its original
+// inline value so it can be restored on reveal.
+function hiddenTargets(svg, prop, colorOf, hiddenHex) {
+  return [...svg.querySelectorAll('*')]
+    .filter((el) => colorOf(el) === hiddenHex)
+    .map((el) => ({ el, prop, original: el.style.getPropertyValue(prop) }));
 }
 
 export async function loadFlag(code, random = Math.random) {
   const { svg, candidates } = await analyzeFlag(code);
   if (candidates.length === 0) throw new Error('no color covers enough area');
   const hiddenHex = candidates[Math.floor(random() * candidates.length)];
-  // Remember each hidden element's original inline fill so reveal() can restore it.
-  const hidden = [...svg.querySelectorAll('*')]
-    .filter((el) => fillOf(el) === hiddenHex)
-    .map((el) => ({ el, original: el.style.getPropertyValue('fill') }));
+  const hidden = [
+    ...hiddenTargets(svg, 'fill', fillOf, hiddenHex),
+    ...hiddenTargets(svg, 'stroke', strokeOf, hiddenHex),
+  ];
   svg.removeAttribute('width');
   svg.removeAttribute('height');
   svg.setAttribute('class', 'flag-svg');
@@ -151,12 +177,12 @@ export async function loadFlag(code, random = Math.random) {
     svg,
     hiddenHex,
     setGuess(hex) {
-      for (const { el } of hidden) el.style.fill = hex;
+      for (const { el, prop } of hidden) el.style.setProperty(prop, hex);
     },
     reveal() {
-      for (const { el, original } of hidden) {
-        if (original) el.style.setProperty('fill', original);
-        else el.style.removeProperty('fill');
+      for (const { el, prop, original } of hidden) {
+        if (original) el.style.setProperty(prop, original);
+        else el.style.removeProperty(prop);
       }
     },
   };
