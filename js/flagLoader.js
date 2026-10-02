@@ -42,7 +42,7 @@ export function pickCandidates(counts, total, minShare = MIN_SHARE) {
 }
 
 function fillOf(el) {
-  return normalizeColor(el.getAttribute('fill') ?? el.style?.fill ?? null);
+  return normalizeColor(el.style?.fill || el.getAttribute('fill') || null);
 }
 
 function parseSvg(text) {
@@ -123,20 +123,26 @@ export async function analyzeFlag(code) {
   makeDefaultFillsExplicit(svg);
   const palette = collectFills(svg);
   let candidates;
+  let usedFallback = false;
   try {
     const { counts, total } = tallyColors(await rasterize(svg), palette);
     candidates = pickCandidates(counts, total);
-  } catch {
+  } catch (err) {
+    console.warn(`Flag ${code}: canvas read failed, using top-level fills`, err);
     candidates = topLevelFills(svg);
+    usedFallback = true;
   }
-  return { svg, candidates };
+  return { svg, candidates, usedFallback };
 }
 
 export async function loadFlag(code, random = Math.random) {
   const { svg, candidates } = await analyzeFlag(code);
   if (candidates.length === 0) throw new Error('no color covers enough area');
   const hiddenHex = candidates[Math.floor(random() * candidates.length)];
-  const hidden = [...svg.querySelectorAll('*')].filter((el) => fillOf(el) === hiddenHex);
+  // Remember each hidden element's original inline fill so reveal() can restore it.
+  const hidden = [...svg.querySelectorAll('*')]
+    .filter((el) => fillOf(el) === hiddenHex)
+    .map((el) => ({ el, original: el.style.getPropertyValue('fill') }));
   svg.removeAttribute('width');
   svg.removeAttribute('height');
   svg.setAttribute('class', 'flag-svg');
@@ -145,10 +151,13 @@ export async function loadFlag(code, random = Math.random) {
     svg,
     hiddenHex,
     setGuess(hex) {
-      for (const el of hidden) el.style.fill = hex;
+      for (const { el } of hidden) el.style.fill = hex;
     },
     reveal() {
-      for (const el of hidden) el.style.removeProperty('fill');
+      for (const { el, original } of hidden) {
+        if (original) el.style.setProperty('fill', original);
+        else el.style.removeProperty('fill');
+      }
     },
   };
 }
