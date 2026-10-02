@@ -50,6 +50,7 @@ export function boot(app) {
   const game = new Game({ storage: safeStorage() });
   const choice = { mode: 'standard', tier: 'easy' };
   let pending = null;
+  let session = 0; // bumps whenever the current game is abandoned or replaced
 
   function header({ sub, left = '', right = '' }) {
     return `<header class="header">
@@ -78,6 +79,7 @@ export function boot(app) {
   // ---------- Home ----------
   function renderHome() {
     pending = null;
+    session++;
     app.innerHTML = `${header({ sub: 'Flag color matching' })}
       <section>
         <h1 class="title">Match the missing color</h1>
@@ -117,6 +119,7 @@ export function boot(app) {
     }
     app.querySelector('#start').addEventListener('click', () => {
       game.start(choice.mode, choice.tier);
+      session++;
       pending = null;
       startRound();
     });
@@ -124,8 +127,9 @@ export function boot(app) {
   }
 
   // ---------- Loading flags ----------
-  async function loadNextFlag() {
+  async function loadNextFlag(token) {
     for (let i = 0; i < MAX_LOAD_ATTEMPTS; i++) {
+      if (token !== session) return null;
       const code = game.nextFlagCode();
       try {
         return { code, flag: await loadFlag(code) };
@@ -139,11 +143,12 @@ export function boot(app) {
   function prefetchIfNeeded() {
     const more = game.mode === 'infinite' || game.round < STANDARD_ROUNDS;
     if (!more) return;
-    pending = loadNextFlag();
+    pending = loadNextFlag(session);
     pending.catch(() => {});
   }
 
   async function startRound() {
+    const token = session;
     app.innerHTML = `${gameHeader()}
       <section>
         <h1 class="title country">&nbsp;</h1>
@@ -151,16 +156,17 @@ export function boot(app) {
       </section>`;
     wireQuit();
 
-    const promise = pending ?? loadNextFlag();
+    const promise = pending ?? loadNextFlag(token);
     pending = null;
     let next;
     try {
       next = await promise;
     } catch {
+      if (token !== session) return;
       renderLoadError();
       return;
     }
-    if (!app.querySelector('.flag-frame.loading')) return; // user left meanwhile
+    if (token !== session || !next) return; // user left meanwhile
     renderRound(next);
     prefetchIfNeeded();
   }
@@ -258,6 +264,7 @@ export function boot(app) {
   // ---------- End ----------
   function renderEnd() {
     pending = null;
+    session++;
     const standard = game.mode === 'standard';
     const best = game.bestFor(game.mode, game.tier);
     app.innerHTML = `${header({ sub: `${MODE_LABELS[game.mode]} · ${TIER_LABELS[game.tier]}` })}
@@ -284,6 +291,7 @@ export function boot(app) {
     }
     app.querySelector('#again').addEventListener('click', () => {
       game.start(game.mode, game.tier);
+      session++;
       startRound();
     });
     app.querySelector('#home').addEventListener('click', renderHome);
