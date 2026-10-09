@@ -1,57 +1,19 @@
-// Fetches a flag SVG, finds which colors cover enough area to be hidden,
-// and returns an inline SVG whose hidden color can be repainted live.
-import { normalizeColor, hexToRgb } from './colors.js';
+// Loads a bundled flag SVG and returns it inline with one color hidden: every
+// element painted in that color (fill, stroke or gradient stop) can be repainted
+// live with the player's guess, then restored on reveal.
+import { normalizeColor } from './colors.js';
+import { FLAG_DATA } from './flagData.js';
 
-export const flagUrl = (code) =>
-  `https://cdn.jsdelivr.net/npm/flag-icons@7.5.0/flags/4x3/${code}.svg`;
+export const flagUrl = (code) => new URL(`../flags/${code}.svg`, import.meta.url).href;
 
-export const MIN_SHARE = 0.08;
-const MATCH_TOLERANCE = 12;
+export const PAINTS = ['fill', 'stroke', 'stop-color'];
 const FETCH_TIMEOUT_MS = 8000;
-const RASTER_W = 160;
-const RASTER_H = 120;
-const SHAPES = new Set(['path', 'rect', 'circle', 'ellipse', 'polygon', 'polyline', 'text']);
-const NON_RENDERED = 'defs, clipPath, mask, symbol, pattern, marker';
 
-// Pure: counts opaque pixels per palette color. A pixel counts toward the nearest
-// palette color if it lies within MATCH_TOLERANCE (RGB distance); anti-aliased
-// edge pixels usually don't.
-export function tallyColors(data, palette, tolerance = MATCH_TOLERANCE) {
-  const rgbs = palette.map(hexToRgb);
-  const counts = new Map(palette.map((hex) => [hex, 0]));
-  const tol2 = tolerance * tolerance;
-  let total = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] < 128) continue;
-    total++;
-    let best = -1;
-    let bestD = Infinity;
-    for (let p = 0; p < rgbs.length; p++) {
-      const dr = data[i] - rgbs[p].r, dg = data[i + 1] - rgbs[p].g, db = data[i + 2] - rgbs[p].b;
-      const d = dr * dr + dg * dg + db * db;
-      if (d < bestD) { bestD = d; best = p; }
-    }
-    if (best >= 0 && bestD <= tol2) counts.set(palette[best], counts.get(palette[best]) + 1);
-  }
-  return { counts, total };
+export function paintOf(el, prop) {
+  return normalizeColor(el.style?.getPropertyValue(prop) || el.getAttribute(prop) || null);
 }
 
-// Pure: colors covering at least minShare of the opaque pixels.
-export function pickCandidates(counts, total, minShare = MIN_SHARE) {
-  if (total === 0) return [];
-  return [...counts].filter(([, n]) => n / total >= minShare).map(([hex]) => hex);
-}
-
-function fillOf(el) {
-  return normalizeColor(el.style?.fill || el.getAttribute('fill') || null);
-}
-
-function strokeOf(el) {
-  return normalizeColor(el.style?.stroke || el.getAttribute('stroke') || null);
-}
-
-// The flag markup comes from a CDN, so strip anything executable before it is
-// inserted into the page.
+// Strip anything executable before the markup is inserted into the page.
 function sanitizeSvg(svg) {
   for (const el of svg.querySelectorAll('script, foreignObject')) el.remove();
   for (const el of [svg, ...svg.querySelectorAll('*')]) {
@@ -61,129 +23,101 @@ function sanitizeSvg(svg) {
   }
 }
 
-function parseSvg(text) {
+// Inline SVGs share the page's id namespace: two flags both defining `#a` would
+// draw each other's shapes. Give every id a per-flag prefix and rewrite references.
+let svgCount = 0;
+function namespaceIds(svg) {
+  const prefix = `flag${++svgCount}-`;
+  const ids = new Set();
+  for (const el of svg.querySelectorAll('[id]')) {
+    ids.add(el.id);
+    el.id = prefix + el.id;
+  }
+  if (ids.size === 0) return;
+  const ref = (id) => (ids.has(id) ? prefix + id : id);
+  for (const el of [svg, ...svg.querySelectorAll('*')]) {
+    for (const attr of [...el.attributes]) {
+      let value = attr.value.replace(/url\(\s*#([^)\s]+)\s*\)/g, (_, id) => `url(#${ref(id)})`);
+      if (attr.localName === 'href' && value.startsWith('#')) value = '#' + ref(value.slice(1));
+      if (value !== attr.value) attr.value = value;
+    }
+  }
+}
+
+// Parses flag markup into an SVG element ready for analysis or play. Shapes with
+// no fill anywhere up the tree render black; an explicit black on the root keeps
+// that rendering while letting a hidden black repaint them too.
+export function prepareSvg(text) {
   const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
   if (doc.querySelector('parsererror')) throw new Error('SVG parse error');
   const svg = document.importNode(doc.documentElement, true);
   sanitizeSvg(svg);
+  namespaceIds(svg);
+  if (!svg.getAttribute('fill')) svg.setAttribute('fill', '#000000');
   return svg;
 }
 
-// Shapes with no fill anywhere up the tree render black by default. Make that
-// explicit so a hidden black also repaints them.
-function makeDefaultFillsExplicit(svg) {
-  for (const el of svg.querySelectorAll('*')) {
-    if (!SHAPES.has(el.localName) || el.closest(NON_RENDERED)) continue;
-    let node = el;
-    let hasFill = false;
-    while (node && node !== svg.parentNode) {
-      if (node.getAttribute?.('fill') || node.style?.fill) { hasFill = true; break; }
-      node = node.parentNode;
-    }
-    if (!hasFill) el.setAttribute('fill', '#000000');
-  }
-}
-
-// Every fill and stroke color in the SVG: some flags draw whole regions as strokes.
-function collectColors(svg) {
-  const set = new Set();
-  for (const el of svg.querySelectorAll('*')) {
-    for (const hex of [fillOf(el), strokeOf(el)]) if (hex) set.add(hex);
-  }
-  return [...set];
-}
-
-// Fallback when the canvas can't be read: colors of top-level shapes (usually stripes).
-function topLevelColors(svg) {
-  const set = new Set();
-  for (const el of svg.children) {
-    if (el.localName === 'defs') continue;
-    for (const hex of [fillOf(el), strokeOf(el)]) if (hex) set.add(hex);
-  }
-  return [...set];
-}
-
-function rasterize(svg) {
-  const copy = svg.cloneNode(true);
-  copy.setAttribute('width', RASTER_W);
-  copy.setAttribute('height', RASTER_H);
-  const text = new XMLSerializer().serializeToString(copy);
-  const url = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = RASTER_W;
-        canvas.height = RASTER_H;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(img, 0, 0, RASTER_W, RASTER_H);
-        resolve(ctx.getImageData(0, 0, RASTER_W, RASTER_H).data);
-      } catch (err) {
-        reject(err);
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('SVG rasterize failed'));
-    };
-    img.src = url;
-  });
-}
-
-// Fetch + parse + find hideable colors. Used by loadFlag and the dev check page.
-export async function analyzeFlag(code) {
+export async function fetchFlagSvg(code) {
   const res = await fetch(flagUrl(code), { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const svg = parseSvg(await res.text());
-  makeDefaultFillsExplicit(svg);
-  const palette = collectColors(svg);
-  let candidates;
-  let usedFallback = false;
-  try {
-    const { counts, total } = tallyColors(await rasterize(svg), palette);
-    candidates = pickCandidates(counts, total);
-  } catch (err) {
-    console.warn(`Flag ${code}: canvas read failed, using top-level colors`, err);
-    candidates = topLevelColors(svg);
-    usedFallback = true;
+  return prepareSvg(await res.text());
+}
+
+// Width / height from the viewBox (or width/height attributes).
+export function svgRatio(svg) {
+  const vb = svg.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number);
+  if (vb?.length === 4 && vb[2] > 0 && vb[3] > 0) return vb[2] / vb[3];
+  const w = parseFloat(svg.getAttribute('width'));
+  const h = parseFloat(svg.getAttribute('height'));
+  return w > 0 && h > 0 ? w / h : 1.5;
+}
+
+// Every element/property pair painted in one of `colors`, with its original
+// inline value so it can be restored.
+export function paintTargets(svg, colors) {
+  const set = new Set(colors);
+  const targets = [];
+  for (const el of [svg, ...svg.querySelectorAll('*')]) {
+    for (const prop of PAINTS) {
+      if (set.has(paintOf(el, prop))) targets.push({ el, prop, original: el.style.getPropertyValue(prop) });
+    }
   }
-  return { svg, candidates, usedFallback };
+  return targets;
 }
 
-// Elements whose `prop` (fill or stroke) is the hidden color, each with its original
-// inline value so it can be restored on reveal.
-function hiddenTargets(svg, prop, colorOf, hiddenHex) {
-  return [...svg.querySelectorAll('*')]
-    .filter((el) => colorOf(el) === hiddenHex)
-    .map((el) => ({ el, prop, original: el.style.getPropertyValue(prop) }));
-}
-
-export async function loadFlag(code, random = Math.random) {
-  const { svg, candidates } = await analyzeFlag(code);
-  if (candidates.length === 0) throw new Error('no color covers enough area');
-  const hiddenHex = candidates[Math.floor(random() * candidates.length)];
-  const hidden = [
-    ...hiddenTargets(svg, 'fill', fillOf, hiddenHex),
-    ...hiddenTargets(svg, 'stroke', strokeOf, hiddenHex),
-  ];
-  svg.removeAttribute('width');
-  svg.removeAttribute('height');
-  svg.setAttribute('class', 'flag-svg');
-  svg.setAttribute('role', 'img');
+export function makeRecolorable(svg, colors) {
+  const targets = paintTargets(svg, colors);
   return {
-    svg,
-    hiddenHex,
-    setGuess(hex) {
-      for (const { el, prop } of hidden) el.style.setProperty(prop, hex);
+    paint(hex) {
+      for (const { el, prop } of targets) el.style.setProperty(prop, hex);
     },
-    reveal() {
-      for (const { el, prop, original } of hidden) {
+    restore() {
+      for (const { el, prop, original } of targets) {
         if (original) el.style.setProperty(prop, original);
         else el.style.removeProperty(prop);
       }
     },
+  };
+}
+
+// Hideable colors come from flagData.js (generated by dev/build-flag-data.mjs), so
+// every browser hides from the same list and a seeded pick is the same everywhere.
+export async function loadFlag(code, random = Math.random) {
+  const data = FLAG_DATA[code];
+  if (!data?.colors.length) throw new Error(`no hideable color for ${code}`);
+  const svg = await fetchFlagSvg(code);
+  const hidden = data.colors[Math.floor(random() * data.colors.length)];
+  const recolor = makeRecolorable(svg, [hidden.hex, ...(hidden.also ?? [])]);
+  svg.removeAttribute('width');
+  svg.removeAttribute('height');
+  svg.setAttribute('class', 'flag-svg');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  return {
+    svg,
+    hiddenHex: hidden.hex,
+    ratio: data.ratio,
+    setGuess: recolor.paint,
+    reveal: recolor.restore,
   };
 }
