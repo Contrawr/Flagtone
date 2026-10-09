@@ -171,8 +171,22 @@ try {
   await desk.click('#start');
   await desk.waitForSelector('#lock');
   await shot(desk, '14-desktop-round');
-  await desk.keyboard.press('Enter');
+  // The hint blinks the hidden area: its paint changes during the first second.
+  const paintNow = () => desk.evaluate(() => [...document.querySelectorAll('.flag-svg [style]')].map((el) => el.style.cssText).join());
+  const seen = new Set();
+  for (let i = 0; i < 8; i++) {
+    seen.add(await paintNow());
+    await desk.waitForTimeout(120);
+  }
+  check(seen.size >= 2, 'hidden area blinks');
+  // Holding Enter locks once and stays on the reveal.
+  await desk.focus('#hue');
+  await desk.keyboard.down('Enter');
   await desk.waitForSelector('#next');
+  await desk.keyboard.down('Enter');
+  await desk.keyboard.down('Enter');
+  await desk.keyboard.up('Enter');
+  check(await desk.$('#next') && (await desk.$$('.dots li[data-grade]')).length === 1, 'held Enter stays on the reveal');
   await shot(desk, '15-desktop-reveal');
 
   // ---------- Perfect rounds, compare and share ----------

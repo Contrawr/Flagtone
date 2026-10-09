@@ -2,10 +2,23 @@
 // Storage may be missing, blocked or full, so every access is guarded and the
 // game works without it.
 import { shiftDay } from './daily.js';
-import { PERFECT_PERCENT } from './game.js';
+import { PERFECT_PERCENT, ROUNDS } from './game.js';
+import { flagByCode } from './flags.js';
+import { GRADES } from './rating.js';
 
 const PREFIX = 'geopaint:v2:';
 const EMPTY_STATS = { games: 0, flags: 0, perfects: 0, percentSum: 0 };
+const HEX = /^#[0-9a-f]{6}$/;
+
+// A saved round as the game wrote it; anything else (an older format, a manual
+// edit, a half-written value) is ignored rather than allowed to break a screen.
+function validRound(r) {
+  return r && typeof r === 'object'
+    && typeof r.code === 'string' && flagByCode(r.code)
+    && Number.isFinite(r.percent) && r.percent >= 0 && r.percent <= 100
+    && GRADES.some((g) => g.id === r.grade)
+    && HEX.test(r.guessHex) && HEX.test(r.trueHex);
+}
 
 export class Records {
   constructor(storage = null) {
@@ -36,7 +49,12 @@ export class Records {
 
   stats() {
     const s = this.read('stats');
-    return s && typeof s === 'object' ? { ...EMPTY_STATS, ...s } : { ...EMPTY_STATS };
+    const stats = { ...EMPTY_STATS };
+    for (const key of Object.keys(EMPTY_STATS)) {
+      const n = Number(s?.[key]);
+      if (Number.isFinite(n) && n >= 0) stats[key] = n;
+    }
+    return stats;
   }
 
   // Records a finished game. Returns whether it beat the best for its mode and tier
@@ -60,7 +78,8 @@ export class Records {
   // Rounds played in the Daily for `key`, and whether it is finished.
   daily(key) {
     const d = this.read(`daily:${key}`);
-    return d && Array.isArray(d.results) ? d : null;
+    if (!d || !Array.isArray(d.results) || d.results.length > ROUNDS || !d.results.every(validRound)) return null;
+    return { results: d.results, done: d.done === true && d.results.length === ROUNDS };
   }
 
   saveDaily(key, results, done) {

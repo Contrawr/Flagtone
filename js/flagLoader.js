@@ -85,30 +85,9 @@ export function paintTargets(svg, colors) {
   return targets;
 }
 
-const DRAWN = 'path, rect, circle, ellipse, polygon, polyline, line, text, use, g';
-const NOT_DRAWN = 'defs, clipPath, mask, symbol, pattern, marker, linearGradient, radialGradient';
-
-// Drawn elements showing one of the targets' colors, for the hint flash. A root
-// target (hidden black) stands for every shape that inherits the default fill.
-function visibleTargets(svg, targets) {
-  const els = new Set();
-  const rootIsTarget = targets.some((t) => t.el === svg);
-  for (const { el } of targets) if (el !== svg && el.matches(DRAWN) && !el.closest(NOT_DRAWN)) els.add(el);
-  if (rootIsTarget) {
-    for (const el of svg.querySelectorAll(DRAWN)) {
-      if (el.closest(NOT_DRAWN) || el.localName === 'g') continue;
-      let node = el;
-      while (node !== svg && !node.getAttribute('fill') && !node.style.fill) node = node.parentNode;
-      if (node === svg) els.add(el);
-    }
-  }
-  return [...els];
-}
-
 export function makeRecolorable(svg, colors) {
   const targets = paintTargets(svg, colors);
   return {
-    elements: visibleTargets(svg, targets),
     paint(hex) {
       for (const { el, prop } of targets) el.style.setProperty(prop, hex);
     },
@@ -139,17 +118,6 @@ export async function loadFlag(code, random = Math.random) {
     hiddenHex: hidden.hex,
     ratio: data.ratio,
     setGuess: recolor.paint,
-    reveal() {
-      recolor.restore();
-      for (const el of recolor.elements) el.classList.remove('flag-hint');
-    },
-    // Briefly flashes the repaintable area so the player sees what to match.
-    highlight() {
-      for (const el of recolor.elements) {
-        el.classList.remove('flag-hint');
-        el.getBoundingClientRect?.();
-        el.classList.add('flag-hint');
-      }
-    },
+    reveal: recolor.restore,
   };
 }

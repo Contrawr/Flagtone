@@ -58,6 +58,12 @@ function vibrate(pattern) {
   }
 }
 
+// A shade far from `hex` in brightness, for blinking the area to paint.
+function contrastOf(hex) {
+  const { h, s, v } = hexToHsb(hex);
+  return hsbToHex(h, s * 0.6, v > 0.55 ? v - 0.45 : Math.min(1, v + 0.45));
+}
+
 function untilTomorrow() {
   const now = new Date();
   const midnight = new Date(now);
@@ -137,7 +143,13 @@ export function boot(app) {
   }
 
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' || e.repeat || help.open || !primary?.isConnected) return;
+    if (e.key !== 'Enter') return;
+    // A held Enter would otherwise click whatever button just took focus (Next).
+    if (e.repeat) {
+      if (!e.target.closest?.('textarea')) e.preventDefault();
+      return;
+    }
+    if (help.open || !primary?.isConnected) return;
     if (e.target.closest?.('button, a, textarea, select, input:not([type=range])')) return;
     e.preventDefault();
     primary.click();
@@ -275,20 +287,22 @@ export function boot(app) {
       </section>`;
     wireTopbar();
 
+    // After midnight the card shows yesterday's Daily: redraw instead of acting on it.
+    const sameDay = (action) => () => (dateKey() === today ? action() : renderHome());
     if (daily?.done) {
       animateRing(app.querySelector('.daily .ring'), dailyAverage);
-      app.querySelector('#daily-share').addEventListener('click', () => share(shareText({
+      app.querySelector('#daily-share').addEventListener('click', sameDay(() => share(shareText({
         mode: 'daily', results: daily.results, score: dailyAverage, dailyNumber: dailyNumber(today), url: siteUrl(),
-      })));
-      app.querySelector('#daily-review').addEventListener('click', reviewDaily);
-      timers.push(setInterval(() => {
-        if (token !== session) return;
-        if (dateKey() !== today) renderHome();
-        else app.querySelector('#countdown').textContent = untilTomorrow();
-      }, 20_000));
+      }))));
+      app.querySelector('#daily-review').addEventListener('click', sameDay(reviewDaily));
     } else {
-      app.querySelector('#daily-play').addEventListener('click', startDaily);
+      app.querySelector('#daily-play').addEventListener('click', sameDay(startDaily));
     }
+    timers.push(setInterval(() => {
+      if (token !== session) return;
+      if (dateKey() !== today) renderHome();
+      else if (daily?.done) app.querySelector('#countdown').textContent = untilTomorrow();
+    }, 20_000));
 
     const sync = () => {
       for (const group of app.querySelectorAll('.seg')) {
@@ -459,11 +473,29 @@ export function boot(app) {
     };
     for (const input of [hue, sat, bri]) input.addEventListener('input', paint);
     paint();
-    setTimeout(() => flag.highlight(), reducedMotion() ? 0 : 250);
+
+    // Blink the area to paint by flipping it to a contrasting shade a few times.
+    // Repainting the same targets as the guess blinks exactly the hidden color.
+    let blinkTimer = null;
+    if (!reducedMotion()) {
+      let step = 0;
+      const blink = () => {
+        const guess = current();
+        flag.setGuess(step % 2 === 0 ? contrastOf(guess) : guess);
+        if (++step < 6) blinkTimer = setTimeout(blink, 260);
+      };
+      blinkTimer = setTimeout(blink, 300);
+    }
 
     const lock = app.querySelector('#lock');
     primary = lock;
     lock.addEventListener('click', () => {
+      clearTimeout(blinkTimer);
+      if (game.mode === 'daily' && (records.daily(dailyKey)?.results.length ?? 0) > game.results.length) {
+        toast('This Daily moved on in another tab');
+        renderHome();
+        return;
+      }
       const values = { h: Number(hue.value), s: Number(sat.value), b: Number(bri.value) };
       const result = game.submit(code, current(), flag.hiddenHex);
       if (game.mode === 'daily') records.saveDaily(dailyKey, game.results, game.isOver());

@@ -170,8 +170,6 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--ink); outline-o
   display: block; width: 100%; height: 100%;
   filter: drop-shadow(0 0 0.6px rgb(0 0 0 / 0.45)) drop-shadow(0 8px 14px rgb(60 45 30 / 0.16));
 }
-.flag-svg .flag-hint { animation: hint 520ms ease-in-out 3; }
-@keyframes hint { 50% { opacity: 0.2; } }
 .flag-svg.revealing * { transition: fill 600ms ease, stroke 600ms ease, stop-color 600ms ease; }
 
 .under-flag { height: 36px; display: grid; place-items: center; margin-bottom: 8px; }

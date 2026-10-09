@@ -13,15 +13,17 @@ function memoryStorage() {
   };
 }
 
+// Rating stub: the match % is the guess's blue channel.
 const fixedRate = (guess) => {
-  const percent = Number(guess);
+  const percent = parseInt(guess.slice(5), 16);
   return { deltaE: 0, percent, grade: gradeFor(percent).id };
 };
+const guessFor = (percent) => `#0000${percent.toString(16).padStart(2, '0')}`;
 
 function finished(mode, tier, percents) {
   const game = new Game({ rate: fixedRate });
   game.start(mode, tier, mode === 'daily' ? { codes: ['fr', 'pe', 'hu', 'kz', 'to'] } : {});
-  for (const p of percents) game.submit(game.nextFlagCode(), String(p), '#000000');
+  for (const p of percents) game.submit(game.nextFlagCode(), guessFor(p), '#000000');
   return game;
 }
 
@@ -70,6 +72,27 @@ test('the daily keeps progress, has no best, and builds a streak', () => {
   // Today not played yet: the streak through yesterday still counts.
   assert.equal(records.dailyStreak('2026-10-10'), 2);
   assert.equal(records.dailyStreak('2026-10-11'), 0);
+});
+
+test('damaged daily data is ignored instead of breaking a screen', () => {
+  const storage = memoryStorage();
+  const records = new Records(storage);
+  const good = finished('daily', null, [90, 80, 70, 60, 50]).results;
+  const put = (value) => { storage.data['geopaint:v2:daily:2026-10-09'] = JSON.stringify(value); };
+  put({ done: true, results: [{}] });
+  assert.equal(records.daily('2026-10-09'), null);
+  put({ done: true, results: good.map((r, i) => (i === 2 ? { ...r, percent: 'x' } : r)) });
+  assert.equal(records.daily('2026-10-09'), null);
+  put({ done: true, results: good.map((r, i) => (i === 2 ? { ...r, grade: '<b>' } : r)) });
+  assert.equal(records.daily('2026-10-09'), null);
+  put({ done: true, results: good.map((r, i) => (i === 2 ? { ...r, code: 'zz' } : r)) });
+  assert.equal(records.daily('2026-10-09'), null);
+  put({ done: true, results: good.slice(0, 3) });
+  assert.equal(records.daily('2026-10-09').done, false, 'done needs all five rounds');
+  put({ done: true, results: good });
+  assert.equal(records.daily('2026-10-09').done, true);
+  storage.data['geopaint:v2:stats'] = JSON.stringify({ games: '<img>', flags: 3, perfects: -1, percentSum: 200 });
+  assert.deepEqual(records.stats(), { games: 0, flags: 3, perfects: 0, percentSum: 200 });
 });
 
 test('help is shown once', () => {
