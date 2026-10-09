@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  hsbToRgb, rgbToHex, hexToRgb, hsbToHex, normalizeColor,
-  rgbToLab, deltaE2000, scoreFromDeltaE, matchScore,
+  hsbToRgb, rgbToHex, hexToRgb, hsbToHex, rgbToHsb, hexToHsb, normalizeColor,
+  rgbToLab, deltaE2000, deltaE2000Terms,
 } from '../js/colors.js';
 
 test('hsbToRgb primaries and grays', () => {
@@ -71,15 +71,21 @@ test('deltaE2000 matches Sharma reference pairs', () => {
   }
 });
 
-test('scoreFromDeltaE mapping', () => {
-  assert.equal(scoreFromDeltaE(0), 10);
-  assert.equal(scoreFromDeltaE(2), 9.5);
-  assert.equal(scoreFromDeltaE(12), 7);
-  assert.equal(scoreFromDeltaE(40), 0);
-  assert.equal(scoreFromDeltaE(95), 0);
+test('rgbToHsb inverts hsbToRgb', () => {
+  assert.deepEqual(rgbToHsb({ r: 255, g: 0, b: 0 }), { h: 0, s: 1, v: 1 });
+  assert.deepEqual(rgbToHsb({ r: 0, g: 0, b: 0 }), { h: 0, s: 0, v: 0 });
+  assert.deepEqual(rgbToHsb({ r: 255, g: 255, b: 255 }), { h: 0, s: 0, v: 1 });
+  assert.equal(hexToHsb('#ff00ff').h, 300);
+  for (const [h, s, v] of [[0, 1, 1], [47, 0.8, 0.9], [200, 0.35, 0.6], [330, 1, 0.5]]) {
+    const back = rgbToHsb(hsbToRgb(h, s, v));
+    assert.ok(Math.abs(back.h - h) < 1 && Math.abs(back.s - s) < 0.01 && Math.abs(back.v - v) < 0.01, `${h} ${s} ${v}`);
+  }
 });
 
-test('matchScore', () => {
-  assert.deepEqual(matchScore('#ffe000', '#ffe000'), { deltaE: 0, score: 10 });
-  assert.equal(matchScore('#000000', '#ffffff').score, 0);
+test('deltaE2000Terms are signed relative to the first color', () => {
+  const red = rgbToLab(hexToRgb('#b22234'));
+  const darker = deltaE2000Terms(red, rgbToLab(hexToRgb('#801828')));
+  assert.ok(darker.l < 0);
+  const duller = deltaE2000Terms(red, rgbToLab(hexToRgb('#a0585e')));
+  assert.ok(duller.c < 0);
 });
