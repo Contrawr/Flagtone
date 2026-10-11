@@ -2,6 +2,9 @@
 
 Date: 2026-10-02
 
+> Partly superseded by [GeoPaint v2](2026-10-09-geopaint-v2-design.md): bundled flags at official
+> proportions, a 0–100% rating with grades and hints, and Daily / Classic / Endless modes.
+
 ## Summary
 
 A browser game. The player sees a country's flag with one of its colors hidden and recreates that color with hue, saturation and brightness sliders. Each attempt is scored 0–10 by perceptual color distance.

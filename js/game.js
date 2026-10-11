@@ -1,12 +1,15 @@
-// Game state machine. No DOM access: storage, randomness and scoring are injected.
-import { matchScore } from './colors.js';
+// The rules of one play-through. No DOM and no storage: randomness and rating are
+// injected, so it can be tested in Node.
+import { rate as defaultRate } from './rating.js';
 import { poolFor, flagByCode } from './flags.js';
 
-export const STANDARD_ROUNDS = 5;
-export const START_LIVES = 3;
-export const LIFE_THRESHOLD = 7;
+export const MODES = ['daily', 'classic', 'endless'];
+export const ROUNDS = 5;            // Daily and Classic
+export const START_HEARTS = 3;      // Endless
+export const SAFE_PERCENT = 70;     // Endless: a round below this costs a heart
+export const PERFECT_PERCENT = 95;  // Endless: a perfect round wins a lost heart back
 
-function shuffle(items, random) {
+export function shuffle(items, random) {
   const a = [...items];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
@@ -16,30 +19,33 @@ function shuffle(items, random) {
 }
 
 export class Game {
-  constructor({ storage = null, random = Math.random, score = matchScore } = {}) {
-    this.storage = storage;
+  constructor({ random = Math.random, rate = defaultRate } = {}) {
     this.random = random;
-    this.score = score;
+    this.rate = rate;
     this.mode = null;
     this.tier = null;
   }
 
-  start(mode, tier) {
+  // `codes` fixes the flag order (Daily). `results` are rounds already played,
+  // when resuming a Daily that was left part-way.
+  start(mode, tier, { codes = null, results = [] } = {}) {
     this.mode = mode;
     this.tier = tier;
-    this.results = [];
-    this.lives = START_LIVES;
+    this.codes = codes;
+    this.results = results.map((r) => ({ ...r }));
+    this.hearts = START_HEARTS;
     this.lastCode = null;
     this.queue = [];
-    this.isNewBest = false;
   }
 
-  // Next flag to show. Standard never repeats; Infinite reshuffles the pool when
-  // it runs out and never shows the same flag twice in a row.
+  // Next flag to show. A fixed order always offers the current round's flag (so a
+  // failed load retries it). Classic never repeats; Endless reshuffles the pool
+  // when it runs out and never shows the same flag twice in a row.
   nextFlagCode() {
+    if (this.codes) return this.codes[this.results.length];
     if (this.queue.length === 0) {
       let codes = poolFor(this.tier).map((f) => f.code);
-      if (this.mode === 'standard') {
+      if (this.mode === 'classic') {
         // Failed loads consume codes, so a refill must not bring back played flags.
         const played = new Set(this.results.map((r) => r.code));
         codes = codes.filter((c) => !played.has(c));
@@ -57,51 +63,32 @@ export class Game {
     return this.results.length + 1;
   }
 
-  get total() {
-    return Math.round(this.results.reduce((sum, r) => sum + r.score, 0) * 10) / 10;
+  // Mean match % of the rounds played so far.
+  get average() {
+    if (this.results.length === 0) return 0;
+    return Math.round(this.results.reduce((sum, r) => sum + r.percent, 0) / this.results.length);
   }
 
   submit(code, guessHex, trueHex) {
-    const { deltaE, score } = this.score(guessHex, trueHex);
-    const lostLife = this.mode === 'infinite' && score < LIFE_THRESHOLD;
-    if (lostLife) this.lives -= 1;
-    const result = { code, name: flagByCode(code).name, guessHex, trueHex, deltaE, score, lostLife };
+    const { deltaE, percent, grade } = this.rate(guessHex, trueHex);
+    let heartChange = 0;
+    if (this.mode === 'endless') {
+      if (percent < SAFE_PERCENT) heartChange = -1;
+      else if (percent >= PERFECT_PERCENT && this.hearts < START_HEARTS) heartChange = 1;
+      this.hearts += heartChange;
+    }
+    const result = { code, name: flagByCode(code).name, guessHex, trueHex, deltaE, percent, grade, heartChange };
     this.results.push(result);
-    if (this.isOver()) this.saveBest();
     return result;
   }
 
   isOver() {
-    if (this.mode === 'standard') return this.results.length >= STANDARD_ROUNDS;
-    return this.lives <= 0;
+    if (this.mode === 'endless') return this.hearts <= 0;
+    return this.results.length >= ROUNDS;
   }
 
-  // Standard: total out of 50. Infinite: flags completed (the streak).
+  // Daily and Classic: average match %. Endless: flags painted.
   finalScore() {
-    return this.mode === 'standard' ? this.total : this.results.length;
-  }
-
-  bestFor(mode, tier) {
-    try {
-      const raw = this.storage?.getItem(`geopaint:best:${mode}:${tier}`);
-      if (raw == null) return null;
-      const n = Number(raw);
-      return Number.isFinite(n) ? n : null;
-    } catch {
-      return null;
-    }
-  }
-
-  saveBest() {
-    const previous = this.bestFor(this.mode, this.tier);
-    const current = this.finalScore();
-    if (previous == null || current > previous) {
-      this.isNewBest = true;
-      try {
-        this.storage?.setItem(`geopaint:best:${this.mode}:${this.tier}`, String(current));
-      } catch {
-        // Storage unavailable (private mode): the best score just isn't kept.
-      }
-    }
+    return this.mode === 'endless' ? this.results.length : this.average;
   }
 }
