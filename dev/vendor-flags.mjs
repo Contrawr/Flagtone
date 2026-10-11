@@ -1,4 +1,4 @@
-// Copies the flag SVGs GeoPaint uses from a local clone of
+// Copies the flag SVGs Flagtone uses from a local clone of
 // https://github.com/hampusborgos/country-flags into flags/, normalizing them so
 // every color is a plain lowercase #rrggbb presentation attribute:
 //   - <style> class rules are inlined as attributes, then <style> and class go away

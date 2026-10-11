@@ -6,7 +6,8 @@ import { PERFECT_PERCENT, ROUNDS } from './game.js';
 import { flagByCode } from './flags.js';
 import { GRADES } from './rating.js';
 
-const PREFIX = 'geopaint:v2:';
+const PREFIX = 'flagtone:';
+const OLD_PREFIX = 'geopaint:v2:'; // before the game was renamed
 const EMPTY_STATS = { games: 0, flags: 0, perfects: 0, percentSum: 0 };
 const HEX = /^#[0-9a-f]{6}$/;
 
@@ -18,6 +19,26 @@ function validRound(r) {
     && Number.isFinite(r.percent) && r.percent >= 0 && r.percent <= 100
     && GRADES.some((g) => g.id === r.grade)
     && HEX.test(r.guessHex) && HEX.test(r.trueHex);
+}
+
+// One-time copy of progress saved under the game's old name, so bests, stats and
+// the Daily streak survive the rename. Existing new-name values are kept.
+export function migrateStorage(storage) {
+  try {
+    if (!storage || storage.getItem(`${PREFIX}migrated`) != null) return;
+    const keys = [];
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (key?.startsWith(OLD_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) {
+      const target = PREFIX + key.slice(OLD_PREFIX.length);
+      if (storage.getItem(target) == null) storage.setItem(target, storage.getItem(key));
+    }
+    storage.setItem(`${PREFIX}migrated`, 'true');
+  } catch {
+    // Storage unavailable: nothing to migrate.
+  }
 }
 
 export class Records {

@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "geopaint",
+      "name": "flagtone",
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8123", "--directory", "/Users/macontra/Geopaint"],
       "port": 8123
