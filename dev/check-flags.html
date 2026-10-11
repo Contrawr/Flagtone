@@ -5,58 +5,100 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Flag check</title>
   <style>
-    body { font: 14px system-ui, sans-serif; margin: 16px; background: #f5f1ed; }
-    #summary { font-weight: 700; margin-bottom: 12px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-    .card { background: #fff; border-radius: 10px; padding: 8px; border: 2px solid #ddd6cf; }
+    body { font: 13px system-ui, sans-serif; margin: 16px; background: #f5f1ed; color: #2b2a29; }
+    #summary { font-weight: 700; margin-bottom: 12px; white-space: pre-wrap; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+    .card { background: #fff; border-radius: 10px; padding: 8px; border: 2px solid #ddd6cf; display: grid; gap: 6px; align-content: start; }
     .card.bad { border-color: #c9473f; }
-    .card svg { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; }
-    .chips { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
-    .chips i { width: 18px; height: 18px; border-radius: 4px; border: 1px solid #ccc; }
+    .frame { height: 90px; display: grid; place-items: center; }
+    .frame svg { max-width: 100%; max-height: 90px; width: auto; height: auto; filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.4)); }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chips span { display: inline-flex; align-items: center; gap: 3px; font: 11px ui-monospace, monospace; }
+    .chips i { width: 16px; height: 16px; border-radius: 4px; border: 1px solid #ccc; }
+    .warn { color: #c9473f; font-weight: 700; }
   </style>
 </head>
 <body>
+  <p>Every bundled flag at its true proportions, with the colors the game may hide
+    (share of the flag's area). Add <code>?audit</code> to also check that preparing the
+    SVG doesn't change how it renders, and that hiding a color leaves no trace of it.</p>
   <div id="summary">Checking…</div>
   <div class="grid" id="grid"></div>
   <script type="module">
     import { FLAGS } from '../js/flags.js';
-    import { analyzeFlag } from '../js/flagLoader.js';
+    import { flagUrl, prepareSvg } from '../js/flagLoader.js';
+    import { analyzeSvg, rasterize, leakShare } from '../js/flagAnalysis.js';
 
+    const audit = new URLSearchParams(location.search).has('audit');
     const grid = document.getElementById('grid');
     const bad = [];
-    let fallback = 0;
+    const data = {};
+
+    // Mean per-channel difference between the untouched file and the prepared SVG.
+    async function renderDrift(text, svg, size) {
+      const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+      const raw = doc.documentElement;
+      raw.setAttribute('width', size.w);
+      raw.setAttribute('height', size.h);
+      raw.setAttribute('preserveAspectRatio', 'none');
+      const a = await rasterize(new XMLSerializer().serializeToString(raw), size);
+      const b = await rasterize(svg, size);
+      let sum = 0;
+      for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
+      return sum / a.length;
+    }
+
     for (const f of FLAGS) {
       const card = document.createElement('div');
       card.className = 'card';
       card.dataset.code = f.code;
-      let failed = false;
+      const problems = [];
       try {
-        const { svg, candidates, usedFallback } = await analyzeFlag(f.code);
-        if (usedFallback) fallback++;
+        const text = await (await fetch(flagUrl(f.code))).text();
+        const svg = prepareSvg(text);
+        const { ratio, colors, size } = await analyzeSvg(svg);
+        data[f.code] = { ratio, colors };
+        if (colors.length === 0) problems.push('no hideable color');
+        if (audit) {
+          const drift = await renderDrift(text, svg, size);
+          if (drift > 0.01) problems.push(`render drift ${drift.toFixed(3)}`);
+          for (const c of colors) {
+            const leak = await leakShare(svg, [c.hex, ...c.also], size);
+            if (leak > 0.002) problems.push(`${c.hex} leaks ${(leak * 100).toFixed(2)}%`);
+          }
+        }
+        const frame = document.createElement('div');
+        frame.className = 'frame';
         svg.removeAttribute('width');
         svg.removeAttribute('height');
-        card.append(svg);
+        frame.append(svg);
         const chips = document.createElement('div');
         chips.className = 'chips';
-        for (const hex of candidates) {
-          const i = document.createElement('i');
-          i.style.background = hex;
-          i.title = hex;
-          chips.append(i);
+        for (const c of colors) {
+          const chip = document.createElement('span');
+          chip.title = [c.hex, ...c.also].join(' ');
+          chip.innerHTML = `<i style="background:${c.hex}"></i>${Math.round(c.share * 100)}%${c.also.length ? '+' : ''}`;
+          chips.append(chip);
         }
-        card.append(chips);
-        if (candidates.length === 0) { failed = true; bad.push(`${f.code}: no candidates`); }
+        card.append(frame, chips);
+        card.append(`${f.code} · ${f.name} · ${f.tier} · ${ratio.toFixed(3)}`);
       } catch (err) {
-        failed = true;
-        bad.push(`${f.code}: ${err.message}`);
+        problems.push(err.message);
+        card.append(`${f.code} · ${f.name}`);
       }
-      if (failed) card.classList.add('bad');
-      card.append(`${f.code} · ${f.name} · ${f.tier}`);
+      if (problems.length) {
+        card.classList.add('bad');
+        const p = document.createElement('div');
+        p.className = 'warn';
+        p.textContent = problems.join('; ');
+        card.append(p);
+        bad.push(`${f.code}: ${problems.join('; ')}`);
+      }
       grid.append(card);
     }
     document.getElementById('summary').textContent =
-      `${FLAGS.length} flags checked, ${bad.length} problems, ${fallback} used the canvas fallback${bad.length ? ': ' + bad.join(', ') : ''}`;
-    window.checkResult = { total: FLAGS.length, bad, fallback };
+      `${FLAGS.length} flags checked${audit ? ' (with audit)' : ''}, ${bad.length} problems${bad.length ? ':\n' + bad.join('\n') : ''}`;
+    window.checkResult = { total: FLAGS.length, bad, data };
   </script>
 </body>
 </html>

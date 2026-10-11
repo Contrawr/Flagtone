@@ -1,4 +1,4 @@
-// Pure color math: HSB/RGB/hex conversions, CIELAB, CIEDE2000, scoring.
+// Pure color math: HSB/RGB/hex conversions, CIELAB, CIEDE2000.
 
 export function clamp(x, lo, hi) {
   return Math.min(hi, Math.max(lo, x));
@@ -24,6 +24,24 @@ export function hexToRgb(hex) {
 
 export function hsbToHex(h, s, v) {
   return rgbToHex(hsbToRgb(h, s, v));
+}
+
+// Inverse of hsbToRgb: h in degrees [0, 360), s and v in [0, 1]. Grays get h = 0.
+export function rgbToHsb({ r, g, b }) {
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  let h = 0;
+  if (d > 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h = (h * 60 + 360) % 360;
+  }
+  return { h, s: max === 0 ? 0 : d / max, v: max / 255 };
+}
+
+export function hexToHsb(hex) {
+  return rgbToHsb(hexToRgb(hex));
 }
 
 const NAMED = {
@@ -63,8 +81,10 @@ export function rgbToLab({ r, g, b }) {
   return { L: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
 }
 
-// CIEDE2000 color difference (Sharma, Wu & Dalal 2005), kL = kC = kH = 1.
-export function deltaE2000(c1, c2) {
+// The weighted lightness, chroma and hue terms of CIEDE2000 (Sharma, Wu & Dalal
+// 2005), kL = kC = kH = 1, each signed as c2 relative to c1 (l > 0: c2 is lighter;
+// c > 0: c2 is more saturated; h > 0: c2's hue angle is larger).
+export function deltaE2000Terms(c1, c2) {
   const rad = Math.PI / 180;
   const { L: L1, a: a1, b: b1 } = c1;
   const { L: L2, a: a2, b: b2 } = c2;
@@ -111,16 +131,11 @@ export function deltaE2000(c1, c2) {
   const Sc = 1 + 0.045 * Cbarp;
   const Sh = 1 + 0.015 * Cbarp * T;
   const Rt = -Math.sin(2 * dTheta * rad) * Rc;
-  const l = dLp / Sl, c = dCp / Sc, h = dHp / Sh;
-  return Math.sqrt(l * l + c * c + h * h + Rt * c * h);
+  return { l: dLp / Sl, c: dCp / Sc, h: dHp / Sh, rt: Rt };
 }
 
-// ΔE → 0–10, one decimal. ΔE 0 → 10, ΔE 12 → 7, ΔE ≥ 40 → 0.
-export function scoreFromDeltaE(dE) {
-  return Math.round(clamp(10 - dE / 4, 0, 10) * 10) / 10;
-}
-
-export function matchScore(guessHex, trueHex) {
-  const deltaE = deltaE2000(rgbToLab(hexToRgb(guessHex)), rgbToLab(hexToRgb(trueHex)));
-  return { deltaE, score: scoreFromDeltaE(deltaE) };
+// CIEDE2000 color difference.
+export function deltaE2000(c1, c2) {
+  const { l, c, h, rt } = deltaE2000Terms(c1, c2);
+  return Math.sqrt(l * l + c * c + h * h + rt * c * h);
 }

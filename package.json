@@ -1,1 +1,11 @@
-{ "name": "geopaint", "private": true, "type": "module", "scripts": { "test": "node --test" } }
+{
+  "name": "flagtone",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node dev/serve.mjs 8123",
+    "test": "node --test",
+    "test:browser": "node dev/playthrough.mjs",
+    "flags:data": "node dev/build-flag-data.mjs"
+  }
+}
