@@ -19,8 +19,8 @@ export function gradeSquares(results) {
 
 export function shareText({ mode, tier, results, score, dailyNumber, url }) {
   let title;
-  if (mode === 'daily') title = `GeoPaint Daily #${dailyNumber} · ${score}%`;
-  else if (mode === 'classic') title = `GeoPaint Classic · ${TIER_LABELS[tier]} · ${score}%`;
-  else title = `GeoPaint Endless · ${TIER_LABELS[tier]} · ${score} ${score === 1 ? 'flag' : 'flags'}`;
+  if (mode === 'daily') title = `Flagtone Daily #${dailyNumber} · ${score}%`;
+  else if (mode === 'classic') title = `Flagtone Classic · ${TIER_LABELS[tier]} · ${score}%`;
+  else title = `Flagtone Endless · ${TIER_LABELS[tier]} · ${score} ${score === 1 ? 'flag' : 'flags'}`;
   return [`${title} 🎨`, gradeSquares(results), url].filter(Boolean).join('\n');
 }

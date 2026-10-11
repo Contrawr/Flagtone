@@ -48,8 +48,11 @@ export function seededRandom(seed) {
   };
 }
 
+// The seeds keep the game's original name so every date keeps its puzzle.
+const SEED = 'geopaint-daily';
+
 export function dailyCodes(key) {
-  const random = seededRandom(`geopaint-daily:${key}`);
+  const random = seededRandom(`${SEED}:${key}`);
   const codes = [];
   for (const tier of DAILY_TIERS) {
     const pool = poolFor(tier).map((f) => f.code).filter((c) => !codes.includes(c));
@@ -60,5 +63,5 @@ export function dailyCodes(key) {
 
 // Per-round generator: picks the hidden color, then the starting hue.
 export function dailyRoundRandom(key, code) {
-  return seededRandom(`geopaint-daily:${key}:${code}`);
+  return seededRandom(`${SEED}:${key}:${code}`);
 }

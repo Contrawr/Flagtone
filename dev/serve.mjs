@@ -40,5 +40,5 @@ export function serve(port = 0) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { url } = await serve(Number(process.argv[2] ?? 8123));
-  console.log(`GeoPaint at ${url}/`);
+  console.log(`Flagtone at ${url}/`);
 }

@@ -171,6 +171,7 @@ try {
   await desk.click('#start');
   await desk.waitForSelector('#lock');
   await shot(desk, '14-desktop-round');
+  await noOverflow(desk, 'desktop round');
   // The hint blinks the hidden area: its paint changes during the first second.
   const paintNow = () => desk.evaluate(() => [...document.querySelectorAll('.flag-svg [style]')].map((el) => el.style.cssText).join());
   const seen = new Set();
@@ -260,8 +261,25 @@ try {
   await pp.waitForSelector('.toast.show');
   const clip = await pp.evaluate(() => navigator.clipboard.readText());
   log('shared:', JSON.stringify(clip));
-  check(/^GeoPaint Endless · Easy · 5 flags 🎨\n🟥🟪🟥🟥🟥\nhttp/.test(clip), 'share text');
+  check(/^Flagtone Endless · Easy · 5 flags 🎨\n🟥🟪🟥🟥🟥\nhttp/.test(clip), 'share text');
   await ctx.close();
+
+  // ---------- Dark theme ----------
+  for (const [name, viewport] of [['phone', { width: 375, height: 740 }], ['desktop', { width: 1280, height: 800 }]]) {
+    const dark = await browser.newPage({ viewport, deviceScaleFactor: 2, colorScheme: 'dark' });
+    dark.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+    dark.on('pageerror', (e) => errors.push(e.message));
+    await dark.goto(`${url}/`);
+    await dark.click('dialog.help button');
+    await shot(dark, `17-dark-${name}-home`);
+    await dark.click('#start');
+    await dark.waitForSelector('#lock');
+    await shot(dark, `18-dark-${name}-round`);
+    await playRound(dark, { hsb: [30, 70, 80] });
+    await shot(dark, `19-dark-${name}-reveal`);
+    await noOverflow(dark, `dark ${name} reveal`);
+    await dark.close();
+  }
 
   check(errors.length === 0, `console errors:\n${errors.join('\n')}`);
   log('OK');

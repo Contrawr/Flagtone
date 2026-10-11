@@ -17,14 +17,14 @@ test('gradeSquares wraps every ten rounds', () => {
 test('shareText per mode', () => {
   assert.equal(
     shareText({ mode: 'daily', results: results('great', 'off'), score: 61, dailyNumber: 3 }),
-    'GeoPaint Daily #3 · 61% 🎨\n🟩🟥',
+    'Flagtone Daily #3 · 61% 🎨\n🟩🟥',
   );
   assert.equal(
     shareText({ mode: 'classic', tier: 'hard', results: results('good'), score: 74, url: 'https://example.com/' }),
-    'GeoPaint Classic · Hard · 74% 🎨\n🟨\nhttps://example.com/',
+    'Flagtone Classic · Hard · 74% 🎨\n🟨\nhttps://example.com/',
   );
   assert.equal(
     shareText({ mode: 'endless', tier: 'impossible', results: results('off'), score: 1 }),
-    'GeoPaint Endless · Impossible · 1 flag 🎨\n🟥',
+    'Flagtone Endless · Impossible · 1 flag 🎨\n🟥',
   );
 });

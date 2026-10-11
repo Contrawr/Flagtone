@@ -5,36 +5,43 @@ import { TIERS, flagByCode } from './flags.js';
 import { loadFlag, flagUrl } from './flagLoader.js';
 import { hsbToHex, hexToHsb } from './colors.js';
 import { GRADES, gradeFor, describeMiss } from './rating.js';
-import { Records } from './records.js';
-import { dateKey, dailyCodes, dailyNumber, dailyRoundRandom } from './daily.js';
+import { Records, migrateStorage } from './records.js';
+import { dateKey, dailyCodes, dailyNumber, dailyRoundRandom, DAILY_TIERS } from './daily.js';
 import { shareText } from './share.js';
 
+export const NAME = 'Flagtone';
 const TIER_LABELS = { easy: 'Easy', medium: 'Medium', hard: 'Hard', impossible: 'Impossible' };
 const MODE_LABELS = { daily: 'Daily', classic: 'Classic', endless: 'Endless' };
 const MAX_LOAD_ATTEMPTS = 5;
 const MAX_END_ROWS = 60;
 const HUE_GRADIENT =
   'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)';
-const RING_C = 2 * Math.PI * 42;
 
-const LOGO = `<svg class="logo" viewBox="0 0 48 48" aria-hidden="true">
-  <g transform="rotate(-8 22 26)">
-    <rect x="4" y="11" width="36" height="30" rx="7" fill="#fff" stroke="#ddd6cf" stroke-width="2"/>
-    <rect x="10" y="17" width="8" height="18" fill="#3b6fd4"/>
-    <rect x="18" y="17" width="8" height="18" fill="#f5f1ed"/>
-    <rect x="26" y="17" width="8" height="18" fill="#e04848"/>
+// The mark: a tricolor whose last band is the whole spectrum, the band you mix.
+const MARK = `<svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+  <defs>
+    <linearGradient id="mark-spectrum" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff3b30"/><stop offset=".22" stop-color="#ffcc00"/>
+      <stop offset=".44" stop-color="#34c759"/><stop offset=".64" stop-color="#00b8f0"/>
+      <stop offset=".82" stop-color="#3d5cff"/><stop offset="1" stop-color="#b44dff"/>
+    </linearGradient>
+    <clipPath id="mark-clip"><rect x="3" y="6.5" width="26" height="19" rx="4"/></clipPath>
+  </defs>
+  <g clip-path="url(#mark-clip)">
+    <rect x="3" y="6.5" width="9" height="19" fill="#1f3fbf"/>
+    <rect x="12" y="6.5" width="8" height="19" fill="#ffffff"/>
+    <rect x="20" y="6.5" width="9" height="19" fill="url(#mark-spectrum)"/>
   </g>
-  <path d="M33 14 41 4l4 3-8 11z" fill="#2b2a29"/>
-  <path d="M31 15c2-1 4 0 5 2-1 3-4 4-7 3 1-2 0-4 2-5z" fill="#2b2a29"/>
+  <rect x="3.5" y="7" width="25" height="18" rx="3.5" fill="none" stroke="currentColor" stroke-opacity=".18"/>
 </svg>`;
-const icon = (d, w = 2.4) =>
+const icon = (d, w = 2) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
-const BACK_ICON = icon('<path d="M15 18 9 12l6-6"/>');
-const HELP_ICON = icon('<circle cx="12" cy="12" r="9.5"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6"/><path d="M12 17.2h.01"/>', 2.2);
-const CHECK_ICON = icon('<path d="m5 13 4 4L19 7"/>', 2.6);
-const ARROW_ICON = icon('<path d="M5 12h14M13 6l6 6-6 6"/>', 2.6);
-const SHARE_ICON = icon('<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>', 2.2);
-const EYE_ICON = icon('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>', 2.2);
+const CLOSE_ICON = icon('<path d="M18 6 6 18M6 6l12 12"/>');
+const HELP_ICON = icon('<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.6-2.4 2.1-2.4 3.5"/><path d="M12 17h.01"/>');
+const ARROW_ICON = icon('<path d="M5 12h14M13 6l6 6-6 6"/>');
+const SHARE_ICON = icon('<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>');
+const EYE_ICON = icon('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>');
+const HEART = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.4C1 8.3 3 4.5 6.7 4.5c2.2 0 3.6 1.2 5.3 3.1 1.7-1.9 3.1-3.1 5.3-3.1 3.7 0 5.7 3.8 4.3 7.1C19.5 16.4 12 21 12 21z"/></svg>';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const gradeById = (id) => GRADES.find((g) => g.id === id);
@@ -43,7 +50,7 @@ const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce
 function safeStorage() {
   try {
     const s = window.localStorage;
-    s.getItem('geopaint:probe');
+    s.getItem('flagtone:probe');
     return s;
   } catch {
     return null;
@@ -73,26 +80,19 @@ function untilTomorrow() {
   return h ? `${h} h ${mins % 60} min` : `${mins} min`;
 }
 
-function ring(grade, big = false) {
-  return `<div class="ring${big ? ' big' : ''}" data-grade="${grade}">
-    <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="track" cx="50" cy="50" r="42"/>
-      <circle class="meter" cx="50" cy="50" r="42" stroke-dasharray="${RING_C}" stroke-dashoffset="${RING_C}"/></svg>
-    <strong aria-hidden="true"><span><span class="num">0</span><span class="unit">%</span></span></strong>
-  </div>`;
-}
-
-function animateRing(el, percent) {
-  const meter = el.querySelector('.meter');
-  const num = el.querySelector('.num');
-  const offset = RING_C * (1 - percent / 100);
-  el.classList.toggle('full', percent >= 100);
+// Counts a number up to `percent` and fills its meter, if there is one.
+function animateScore(root, percent) {
+  const num = root.querySelector('.count');
+  const bar = root.querySelector('.meter i');
   if (reducedMotion()) {
-    meter.style.strokeDashoffset = offset;
     num.textContent = percent;
+    if (bar) bar.style.width = `${percent}%`;
     return;
   }
-  meter.getBoundingClientRect();
-  requestAnimationFrame(() => { meter.style.strokeDashoffset = offset; });
+  if (bar) {
+    bar.getBoundingClientRect();
+    requestAnimationFrame(() => { bar.style.width = `${percent}%`; });
+  }
   const start = performance.now();
   const step = (now) => {
     const k = Math.min(1, (now - start) / 700);
@@ -105,10 +105,22 @@ function animateRing(el, percent) {
 }
 
 function burst() {
-  const colors = ['#7c5cff', '#f0cf6c', '#23a55a', '#e04848', '#3b6fd4'];
+  const colors = ['#8b5cf6', '#eab308', '#22c55e', '#ef4444', '#3b82f6'];
   const dots = Array.from({ length: 14 }, (_, i) =>
     `<i style="--a:${(i * 360) / 14}deg;--c:${colors[i % colors.length]}"></i>`).join('');
   return `<div class="burst" aria-hidden="true">${dots}</div>`;
+}
+
+// The Daily's five flags as tiles: difficulty bars, then each round's match once played.
+function dailySlots(results) {
+  return `<div class="slots" aria-hidden="true">${DAILY_TIERS.map((tier, i) => {
+    const r = results[i];
+    const level = TIERS.indexOf(tier) + 1;
+    const bars = [1, 2, 3, 4].map((b) => `<i${b <= level ? ' class="on"' : ''}></i>`).join('');
+    return `<div class="slot"${r ? ` data-grade="${r.grade}"` : ''}>
+      <span class="slot-face">${r ? `${r.percent}%` : '?'}</span><span class="bars">${bars}</span>
+    </div>`;
+  }).join('')}</div>`;
 }
 
 function squares(results) {
@@ -117,7 +129,9 @@ function squares(results) {
 }
 
 export function boot(app) {
-  const records = new Records(safeStorage());
+  const storage = safeStorage();
+  migrateStorage(storage);
+  const records = new Records(storage);
   const game = new Game();
   const saved = records.read('choice');
   const choice = {
@@ -142,6 +156,12 @@ export function boot(app) {
     timers = [];
   }
 
+  function show(screen, html) {
+    app.dataset.screen = screen;
+    app.innerHTML = html;
+    wireTopbar();
+  }
+
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     // A held Enter would otherwise click whatever button just took focus (Next).
@@ -161,8 +181,9 @@ export function boot(app) {
       <div class="tb-left">${left}</div><div class="tb-center">${center}</div><div class="tb-right">${right}</div>
     </header>`;
   }
+  const brand = `<div class="brand">${MARK}<span>${NAME}</span></div>`;
   const helpButton = `<button class="icon-btn" id="help-btn" aria-label="How to play">${HELP_ICON}</button>`;
-  const backButton = `<button class="icon-btn" id="quit" aria-label="Back to home">${BACK_ICON}</button>`;
+  const quitButton = `<button class="icon-btn" id="quit" aria-label="Back to home">${CLOSE_ICON}</button>`;
 
   function wireTopbar() {
     app.querySelector('#quit')?.addEventListener('click', renderHome);
@@ -178,7 +199,7 @@ export function boot(app) {
   function progress() {
     if (game.mode === 'endless') {
       const hearts = Array.from({ length: START_HEARTS }, (_, i) =>
-        `<span${i < game.hearts ? '' : ' class="lost"'}>♥</span>`).join('');
+        `<span${i < game.hearts ? '' : ' class="lost"'}>${HEART}</span>`).join('');
       const n = game.results.length;
       return `<span class="hearts" role="img" aria-label="${game.hearts} of ${START_HEARTS} hearts">${hearts}</span>
         <span class="pill" aria-label="${n} ${n === 1 ? 'flag' : 'flags'} painted">${n}</span>`;
@@ -192,7 +213,14 @@ export function boot(app) {
   }
 
   function gameTopbar() {
-    return topbar({ left: backButton, center: esc(modeTitle()), right: progress() });
+    return topbar({ left: quitButton, center: esc(modeTitle()), right: progress() });
+  }
+
+  // Small line above the country name.
+  function roundLabel() {
+    if (game.mode === 'daily') return `${TIER_LABELS[DAILY_TIERS[game.results.length]]} · Flag ${game.round} of ${ROUNDS}`;
+    if (game.mode === 'classic') return `Flag ${game.round} of ${ROUNDS}`;
+    return `Flag ${game.round}`;
   }
 
   function formatBest(mode, best) {
@@ -242,55 +270,72 @@ export function boot(app) {
 
     let dailyBody;
     if (daily?.done) {
-      dailyBody = `<div class="daily-done">${ring(gradeFor(dailyAverage).id)}
-          <div><p class="end-sub" style="margin:0 0 6px">Today’s average</p>${squares(daily.results)}</div></div>
-        <div class="button-row"><button class="secondary" id="daily-share">${SHARE_ICON}Share</button>
-          <button class="secondary" id="daily-review">Review</button></div>
-        <p class="next-daily">Next Daily in <span id="countdown">${untilTomorrow()}</span></p>`;
+      const grade = gradeFor(dailyAverage);
+      dailyBody = `<h2>Done for today</h2>
+        <div class="daily-score">
+          <div class="big-num"><span class="count">0</span><span class="unit">%</span></div>
+          <p><span class="grade-label" data-grade="${grade.id}">${grade.label}</span> average</p>
+        </div>
+        ${dailySlots(daily.results)}
+        <div class="btn-row">
+          <button class="btn btn-secondary" id="daily-share">${SHARE_ICON}Share</button>
+          <button class="btn btn-secondary" id="daily-review">Review</button>
+        </div>
+        <p class="fineprint">Next Daily in <span id="countdown">${untilTomorrow()}</span></p>`;
     } else if (daily?.results.length) {
-      dailyBody = `<p>You’re on flag ${daily.results.length + 1} of ${ROUNDS}. Pick up where you left off.</p>
-        <button class="primary" id="daily-play">Continue ${ARROW_ICON}</button>`;
+      dailyBody = `<h2>Keep going</h2>
+        <p class="card-text">You’re on flag ${daily.results.length + 1} of ${ROUNDS}. Pick up where you left off.</p>
+        ${dailySlots(daily.results)}
+        <button class="btn btn-primary btn-block btn-lg" id="daily-play">Continue ${ARROW_ICON}</button>`;
     } else {
-      dailyBody = `<p>Five flags, the same for everyone today. One try.</p>
-        <button class="primary" id="daily-play">Play today’s flags ${ARROW_ICON}</button>`;
+      dailyBody = `<h2>Today’s five flags</h2>
+        <p class="card-text">The same flags for everyone, from easy to impossible. One try.</p>
+        ${dailySlots([])}
+        <button class="btn btn-primary btn-block btn-lg" id="daily-play">Play the Daily ${ARROW_ICON}</button>`;
     }
 
-    app.innerHTML = `${topbar({ right: helpButton })}
+    show('home', `${topbar({ left: brand, right: helpButton })}
       <section class="screen home">
-        <div class="hero">${LOGO}<h1>GeoPaint</h1><p>Paint the missing color back into the flag.</p></div>
-        <div class="card daily">
-          <div class="daily-head">
-            <h2>Daily <small>#${dailyNumber(today)} · ${esc(dateLabel)}</small></h2>
-            ${streak ? `<span class="streak" title="Daily streak" aria-label="${streak}-day streak">🔥 ${streak}</span>` : ''}
-          </div>
-          ${dailyBody}
+        <div class="hero">
+          <h1>Mix the missing color.</h1>
+          <p>Every flag is missing one color. Recreate it with hue, saturation and brightness, and see how close you get.</p>
         </div>
-        <h2 class="section-title">Free play</h2>
-        <div class="field">
-          <div class="seg" data-group="mode" role="group" aria-label="Mode">
-            <button data-value="classic">Classic<small>5 flags</small></button>
-            <button data-value="endless">Endless<small>${START_HEARTS} hearts</small></button>
-          </div>
+        <div class="home-grid">
+          <article class="card daily">
+            <div class="card-head">
+              <span class="eyebrow">Daily #${dailyNumber(today)} · ${esc(dateLabel)}</span>
+              ${streak ? `<span class="pill streak" title="Daily streak" aria-label="${streak}-day streak">🔥 ${streak}</span>` : ''}
+            </div>
+            ${dailyBody}
+          </article>
+          <article class="card free">
+            <div class="card-head"><span class="eyebrow">Free play</span></div>
+            <h2>Play your way</h2>
+            <span class="field-label" id="mode-label">Mode</span>
+            <div class="segmented" style="--n:2" data-group="mode" role="group" aria-labelledby="mode-label">
+              <button data-value="classic">Classic<small>5 flags</small></button>
+              <button data-value="endless">Endless<small>${START_HEARTS} hearts</small></button>
+            </div>
+            <span class="field-label" id="tier-label">Difficulty</span>
+            <div class="segmented seg-tier" style="--n:4" data-group="tier" role="group" aria-labelledby="tier-label">
+              ${TIERS.map((t) => `<button data-value="${t}">${TIER_LABELS[t]}</button>`).join('')}
+            </div>
+            <p class="best" id="best"></p>
+            <button class="btn btn-primary btn-block btn-lg" id="start">Play ${ARROW_ICON}</button>
+          </article>
         </div>
-        <div class="field">
-          <div class="seg seg-4" data-group="tier" role="group" aria-label="Difficulty">
-            ${TIERS.map((t) => `<button data-value="${t}">${TIER_LABELS[t]}</button>`).join('')}
-          </div>
-        </div>
-        <p class="best" id="best"></p>
-        <button class="primary" id="start">Play ${ARROW_ICON}</button>
-        ${stats.flags ? `<div class="stats">
+        ${stats.flags ? `<div class="card stats">
           <div><strong>${stats.flags}</strong><span>flags painted</span></div>
-          <div><strong>${Math.round(stats.percentSum / stats.flags)}%</strong><span>average match</span></div>
+          <div><strong>${Math.round(stats.percentSum / stats.flags)}%</strong><span>average</span></div>
           <div><strong>${stats.perfects}</strong><span>perfect</span></div>
         </div>` : ''}
-      </section>`;
-    wireTopbar();
+        <p class="credit">Flags from Wikimedia Commons, in the public domain.</p>
+      </section>`);
 
     // After midnight the card shows yesterday's Daily: redraw instead of acting on it.
     const sameDay = (action) => () => (dateKey() === today ? action() : renderHome());
     if (daily?.done) {
-      animateRing(app.querySelector('.daily .ring'), dailyAverage);
+      animateScore(app.querySelector('.daily-score'), dailyAverage);
       app.querySelector('#daily-share').addEventListener('click', sameDay(() => share(shareText({
         mode: 'daily', results: daily.results, score: dailyAverage, dailyNumber: dailyNumber(today), url: siteUrl(),
       }))));
@@ -305,14 +350,14 @@ export function boot(app) {
     }, 20_000));
 
     const sync = () => {
-      for (const group of app.querySelectorAll('.seg')) {
+      for (const group of app.querySelectorAll('.segmented')) {
         for (const btn of group.querySelectorAll('button')) {
           btn.setAttribute('aria-pressed', String(choice[group.dataset.group] === btn.dataset.value));
         }
       }
       app.querySelector('#best').textContent = formatBest(choice.mode, records.best(choice.mode, choice.tier));
     };
-    for (const group of app.querySelectorAll('.seg')) {
+    for (const group of app.querySelectorAll('.segmented')) {
       group.addEventListener('click', (e) => {
         const btn = e.target.closest('button');
         if (!btn) return;
@@ -386,16 +431,20 @@ export function boot(app) {
     pending.catch(() => {});
   }
 
+  function roundShell(main, side) {
+    return `${gameTopbar()}
+      <section class="screen round">
+        <div class="round-main">${main}</div>
+        <div class="round-side" id="panel">${side}</div>
+      </section>`;
+  }
+
   async function startRound() {
     const token = session;
     primary = null;
-    app.innerHTML = `${gameTopbar()}
-      <section class="screen round">
+    show('round', roundShell(`<p class="eyebrow">${roundLabel()}</p>
         <h1 class="country">&nbsp;</h1>
-        <p class="subtitle">&nbsp;</p>
-        <div class="stage"><div class="flag-frame loading"></div></div>
-      </section>`;
-    wireTopbar();
+        <div class="stage"><div class="flag-frame loading"></div></div>`, ''));
 
     const promise = pending ?? loadNextFlag(token);
     pending = null;
@@ -412,42 +461,37 @@ export function boot(app) {
   }
 
   function renderLoadError() {
-    app.innerHTML = `${gameTopbar()}
+    show('round', `${gameTopbar()}
       <section class="screen">
         <p class="error">Couldn’t load the flag. Check your connection and try again.</p>
-        <button class="primary" id="retry">Retry</button>
-      </section>`;
-    wireTopbar();
+        <button class="btn btn-primary btn-block btn-lg" id="retry">Retry</button>
+      </section>`);
     primary = app.querySelector('#retry');
     primary.addEventListener('click', startRound);
   }
 
   // ---------- Round ----------
   function sliderRow(id, label, max) {
-    return `<label class="slider-row" for="${id}">
-      <span class="slider-label">${label}<output id="${id}-out" for="${id}"></output></span>
+    return `<div class="slider-row">
+      <div class="slider-head"><label for="${id}">${label}</label><output id="${id}-out" for="${id}"></output></div>
       <input type="range" class="slider" id="${id}" min="0" max="${max}" step="1">
-    </label>`;
+    </div>`;
   }
 
   function renderRound({ code, flag, startHue }) {
     const name = flagByCode(code).name;
-    app.innerHTML = `${gameTopbar()}
-      <section class="screen round">
+    show('round', roundShell(`<p class="eyebrow">${roundLabel()}</p>
         <h1 class="country">${esc(name)}</h1>
-        <p class="subtitle">${game.round === 1 ? 'One color is wrong. Mix the real one back in.' : '&nbsp;'}</p>
         <div class="stage"><div class="flag-frame" style="--ratio:${flag.ratio}"></div></div>
-        <div class="under-flag"></div>
-        <div id="panel">
-          <div class="sliders">
-            ${sliderRow('hue', 'Hue', 360)}
-            ${sliderRow('sat', 'Saturation', 100)}
-            ${sliderRow('bri', 'Brightness', 100)}
-          </div>
-          <button class="primary" id="lock">Lock color ${CHECK_ICON}</button>
+        <div class="under-flag">${game.round === 1 ? '<p class="hint">One color is wrong. Mix the real one back in.</p>' : ''}</div>`,
+    `<div class="controls">
+        <div class="sliders">
+          ${sliderRow('hue', 'Hue', 360)}
+          ${sliderRow('sat', 'Saturation', 100)}
+          ${sliderRow('bri', 'Brightness', 100)}
         </div>
-      </section>`;
-    wireTopbar();
+        <button class="btn btn-primary btn-block btn-lg" id="lock">Lock color</button>
+      </div>`));
     flag.svg.classList.remove('revealing');
     flag.svg.setAttribute('aria-label', `Flag of ${name}, with one color missing`);
     app.querySelector('.flag-frame').append(flag.svg);
@@ -458,18 +502,22 @@ export function boot(app) {
     hue.value = startHue;
     sat.value = 50;
     bri.value = 50;
-    hue.style.background = HUE_GRADIENT;
+    hue.style.setProperty('--track', HUE_GRADIENT);
 
     const current = () => hsbToHex(Number(hue.value), sat.value / 100, bri.value / 100);
     const paint = () => {
       const h = Number(hue.value), s = sat.value / 100, b = bri.value / 100;
-      sat.style.background = `linear-gradient(to right, ${hsbToHex(h, 0, b)}, ${hsbToHex(h, 1, b)})`;
-      bri.style.background = `linear-gradient(to right, #000000, ${hsbToHex(h, s, 1)})`;
+      const color = current();
+      hue.style.setProperty('--thumb', hsbToHex(h, 1, 1));
+      sat.style.setProperty('--track', `linear-gradient(to right, ${hsbToHex(h, 0, b)}, ${hsbToHex(h, 1, b)})`);
+      sat.style.setProperty('--thumb', color);
+      bri.style.setProperty('--track', `linear-gradient(to right, #000000, ${hsbToHex(h, s, 1)})`);
+      bri.style.setProperty('--thumb', color);
       for (const [input, text] of [[hue, `${hue.value}°`], [sat, `${sat.value}%`], [bri, `${bri.value}%`]]) {
         app.querySelector(`#${input.id}-out`).textContent = text;
         input.setAttribute('aria-valuetext', text);
       }
-      flag.setGuess(current());
+      flag.setGuess(color);
     };
     for (const input of [hue, sat, bri]) input.addEventListener('input', paint);
     paint();
@@ -522,7 +570,7 @@ export function boot(app) {
       ${row('Hue', hueMatters ? '' : 'any works', HUE_GRADIENT, (values.h / 360) * 100, hueMatters ? (t.h / 360) * 100 : null)}
       ${row('Saturation', satMatters ? '' : 'any works', `linear-gradient(to right, ${hsbToHex(baseH, 0, Math.max(t.v, 0.5))}, ${hsbToHex(baseH, 1, Math.max(t.v, 0.5))})`, values.s, satMatters ? t.s * 100 : null)}
       ${row('Brightness', '', `linear-gradient(to right, #000000, ${hsbToHex(baseH, t.s, 1)})`, values.b, t.v * 100)}
-      <div class="cmp-legend"><span><i style="background:${guessHex}"></i>Yours</span><span><i class="target" style="background:${trueHex}"></i>Real flag</span></div>
+      <div class="cmp-legend"><span><i style="background:${guessHex}"></i>Yours</span><span><i class="target" style="background:${trueHex}"></i>Flag</span></div>
     </div>`;
   }
 
@@ -530,7 +578,6 @@ export function boot(app) {
     app.querySelector('.topbar').outerHTML = gameTopbar();
     wireTopbar();
     if (result.heartChange) app.querySelector('.hearts')?.classList.add('pop');
-    app.querySelector('.subtitle').innerHTML = '&nbsp;';
 
     flag.svg.classList.add('revealing');
     flag.reveal();
@@ -541,7 +588,7 @@ export function boot(app) {
     const tip = describeMiss(result.guessHex, result.trueHex) || `${grade.blurb}.`;
     let heartNote = '';
     if (result.heartChange < 0) heartNote = `<p class="heart-note lost">−1 heart · under ${SAFE_PERCENT}%</p>`;
-    if (result.heartChange > 0) heartNote = '<p class="heart-note won">+1 heart for a Perfect!</p>';
+    if (result.heartChange > 0) heartNote = '<p class="heart-note won">+1 heart for a Perfect</p>';
     const over = game.isOver();
 
     const under = app.querySelector('.under-flag');
@@ -573,23 +620,21 @@ export function boot(app) {
     const panel = app.querySelector('#panel');
     panel.innerHTML = `<div class="card result" data-grade="${grade.id}">
         <p class="visually-hidden" role="status">${result.percent}% match: ${grade.label}. ${esc(tip)}</p>
-        <div class="result-top">
-          <div style="position:relative">${ring(grade.id)}${grade.id === 'perfect' && !reducedMotion() ? burst() : ''}</div>
-          <div class="verdict">
-            <p class="grade-label">${grade.label}</p>
-            <p class="tip">${esc(tip)}</p>
-            ${heartNote}
-          </div>
-          <div class="split" aria-hidden="true">
-            <div class="split-chip"><i style="background:${result.guessHex}"></i><i style="background:${result.trueHex}"></i></div>
-            <div class="split-legend"><span>You</span><span>Real</span></div>
-            <code>${result.trueHex}</code>
-          </div>
+        <div class="result-head">
+          <div class="big-num" aria-hidden="true"><span class="count">0</span><span class="unit">%</span></div>
+          ${grade.id === 'perfect' && !reducedMotion() ? burst() : ''}
+          <span class="grade-label">${grade.label}</span>
+        </div>
+        <div class="meter" aria-hidden="true"><i></i></div>
+        <div class="verdict"><p class="tip">${esc(tip)}</p>${heartNote}</div>
+        <div class="swatches" aria-hidden="true">
+          <div class="swatch"><i style="background:${result.guessHex}"></i><span>Yours</span><code>${result.guessHex}</code></div>
+          <div class="swatch"><i style="background:${result.trueHex}"></i><span>Flag</span><code>${result.trueHex}</code></div>
         </div>
         ${compareBars(values, result.guessHex, result.trueHex)}
       </div>
-      <button class="primary" id="next">${over ? 'See results' : 'Next flag'} ${ARROW_ICON}</button>`;
-    animateRing(panel.querySelector('.ring'), result.percent);
+      <button class="btn btn-primary btn-block btn-lg" id="next">${over ? 'See results' : 'Next flag'} ${ARROW_ICON}</button>`;
+    animateScore(panel.querySelector('.result'), result.percent);
 
     const next = panel.querySelector('#next');
     next.addEventListener('click', () => (over ? renderEnd({ outcome }) : startRound()), { once: true });
@@ -604,26 +649,28 @@ export function boot(app) {
     const { mode } = game;
     const score = game.finalScore();
     const daily = mode === 'daily';
-    let title = 'Game complete';
+    let title = `${MODE_LABELS[mode]} · ${TIER_LABELS[game.tier]} complete`;
     if (daily) title = `Daily #${dailyNumber(dailyKey)} complete`;
     if (mode === 'endless') title = 'Out of hearts';
 
     let headline;
     if (mode === 'endless') {
-      headline = `<p class="big-count">${score}</p>
+      headline = `<div class="end-score">${score}</div>
         <p class="end-sub">${score === 1 ? 'flag' : 'flags'} painted${score ? ` · ${game.average}% average` : ''}</p>`;
     } else {
-      headline = `${ring(gradeFor(score).id, true)}<p class="end-sub">average match</p>`;
+      const grade = gradeFor(score);
+      headline = `<div class="end-score"><span class="count">0</span><span class="unit">%</span></div>
+        <p class="end-sub">average match <span class="grade-label" data-grade="${grade.id}">${grade.label}</span></p>`;
     }
     let extra = '';
-    if (outcome?.isNewBest) extra = '<span class="badge">New best!</span>';
+    if (outcome?.isNewBest) extra = '<span class="badge">New best</span>';
     else if (daily) {
       const streak = records.dailyStreak(dailyKey);
       if (streak) extra = `<p class="end-sub">🔥 ${streak}-day streak</p>`;
     } else extra = `<p class="end-sub">${formatBest(mode, records.best(mode, game.tier))}</p>`;
 
     const shown = game.results.slice(-MAX_END_ROWS);
-    app.innerHTML = `${topbar({ left: backButton, center: esc(modeTitle()) })}
+    show('end', `${topbar({ left: quitButton, center: esc(modeTitle()) })}
       <section class="screen end">
         <div class="end-head">
           <h1>${title}</h1>
@@ -631,30 +678,31 @@ export function boot(app) {
           ${extra}
           ${squares(game.results)}
         </div>
-        <ol class="results"></ol>
+        <ol class="card results"></ol>
         ${game.results.length > shown.length ? `<p class="more">Showing your last ${MAX_END_ROWS} flags</p>` : ''}
-        <button class="primary" id="share">Share result ${SHARE_ICON}</button>
-        <div class="button-row">
-          ${daily ? '' : '<button class="secondary" id="again">Play again</button>'}
-          <button class="secondary" id="home"${daily ? ' style="grid-column: 1 / -1"' : ''}>Home</button>
+        <div class="end-actions">
+          <button class="btn btn-primary btn-block btn-lg" id="share">${SHARE_ICON}Share result</button>
+          <div class="btn-row">
+            ${daily ? '' : '<button class="btn btn-secondary" id="again">Play again</button>'}
+            <button class="btn btn-secondary" id="home"${daily ? ' style="grid-column: 1 / -1"' : ''}>Home</button>
+          </div>
         </div>
-        ${daily ? `<p class="next-daily">Next Daily in ${untilTomorrow()}</p>` : ''}
-      </section>`;
-    wireTopbar();
-    if (mode !== 'endless') animateRing(app.querySelector('.end-head .ring'), score);
+        ${daily ? `<p class="fineprint">Next Daily in ${untilTomorrow()}</p>` : ''}
+      </section>`);
+    if (mode !== 'endless') animateScore(app.querySelector('.end-head'), score);
 
     const list = app.querySelector('.results');
     for (const r of shown) {
       const li = document.createElement('li');
       li.innerHTML = `<span class="thumb"><img alt="" loading="lazy"></span><span class="name"></span>
-        <span class="pair"><i></i><i></i></span><span class="pct" data-grade="${r.grade}">${r.percent}%</span>`;
+        <span class="pair"><i></i><i></i></span><span class="grade-label pct" data-grade="${r.grade}">${r.percent}%</span>`;
       li.querySelector('img').src = flagUrl(r.code);
       li.querySelector('.name').textContent = r.name;
       const [guess, truth] = li.querySelectorAll('.pair i');
       guess.style.background = r.guessHex;
       guess.title = `Yours ${r.guessHex}`;
       truth.style.background = r.trueHex;
-      truth.title = `Real ${r.trueHex}`;
+      truth.title = `Flag ${r.trueHex}`;
       li.setAttribute('aria-label', `${r.name}: ${r.percent}% match, ${gradeById(r.grade).label}`);
       list.append(li);
     }
@@ -681,7 +729,7 @@ export function boot(app) {
     dialog.setAttribute('aria-labelledby', 'help-title');
     dialog.innerHTML = `<h2 id="help-title">How to play</h2>
       <ol class="steps">
-        <li>One color is missing from the flag. Its area starts out in a random color and flashes briefly.</li>
+        <li>One color is missing from the flag. Its area starts out in a random color and blinks briefly.</li>
         <li>Mix the real color with the Hue, Saturation and Brightness sliders. The flag updates as you go.</li>
         <li>Lock it in to see how close you got, and what was off.</li>
       </ol>
@@ -694,7 +742,7 @@ export function boot(app) {
         <li><b>Classic</b>: five flags; your score is the average match.</li>
         <li><b>Endless</b>: ${START_HEARTS} hearts. Under ${SAFE_PERCENT}% costs a heart; a Perfect wins one back.</li>
       </ul>
-      <form method="dialog"><button class="primary" autofocus>Got it</button></form>`;
+      <form method="dialog"><button class="btn btn-primary btn-block btn-lg" autofocus>Got it</button></form>`;
     dialog.addEventListener('close', () => records.markHelpSeen());
     document.body.append(dialog);
     return dialog;
