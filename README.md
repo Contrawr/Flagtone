@@ -10,6 +10,9 @@ sliders, and see how close you get.
 - **Classic**: five flags from one difficulty; your score is the average match.
 - **Endless**: three hearts. A round under 70% costs a heart; a Perfect wins one back.
 
+Sound effects (synthesized, with a mute button) and animations make each round feel
+alive; both respect your device settings for reduced motion.
+
 Difficulty (Easy, Medium, Hard, Impossible) only changes which flags can appear,
 from household names to Pacific island states. Light and dark themes follow your
 device.
