@@ -431,6 +431,79 @@ h1, h2, h3, p { margin: 0; }
   .stage { margin-top: 24px; }
 }
 
+/* ---------- Motion and atmosphere ---------- */
+.tb-buttons { display: flex; gap: 2px; }
+@media (max-width: 340px) { .tb-buttons #sound-btn { display: none; } }
+
+/* Home: two rows of flags drifting in opposite directions, faded at the edges. */
+.marquee {
+  display: grid; gap: 10px; margin: -4px -20px 24px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+.marquee-track { display: flex; gap: 10px; width: max-content; animation: drift 70s linear infinite; }
+.marquee-row.reverse .marquee-track { animation-direction: reverse; animation-duration: 85s; }
+.marquee img { height: 30px; width: auto; border-radius: 3px; box-shadow: 0 0 0 1px var(--flag-edge); opacity: 0.9; }
+@keyframes drift { to { transform: translateX(-50%); } }
+@media (max-width: 380px) { .marquee { margin-left: -16px; margin-right: -16px; } }
+@media (min-width: 900px) { .marquee { margin-left: 0; margin-right: 0; } }
+
+/* Cards and rows arrive one after another. */
+.home-grid .card, .stats { animation: rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.home-grid .card:nth-child(2) { animation-delay: 70ms; }
+.stats { animation-delay: 140ms; }
+.results li { animation: rise 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 55ms + 150ms); }
+.squares i { animation: pop-in 300ms cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+.squares i:nth-child(2) { animation-delay: 60ms; } .squares i:nth-child(3) { animation-delay: 120ms; }
+.squares i:nth-child(4) { animation-delay: 180ms; } .squares i:nth-child(5) { animation-delay: 240ms; }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.4); } }
+
+/* Round: a soft glow behind the flag takes on the color being mixed. */
+.stage { position: relative; isolation: isolate; }
+.glow {
+  position: absolute; inset: 12% 18%; z-index: -1; border-radius: 50%;
+  background: var(--glow, transparent); filter: blur(48px); opacity: 0.45;
+  transition: background-color 500ms ease;
+}
+@media (prefers-color-scheme: dark) { .glow { opacity: 0.35; } }
+.flag-frame { position: relative; }
+.flag-frame.enter { animation: flag-in 520ms cubic-bezier(0.2, 0.9, 0.25, 1.15) both; }
+@keyframes flag-in { from { opacity: 0; transform: translateY(14px) scale(0.94) rotate(-1.5deg); } }
+/* Reveal: a light sweep across the flag. */
+.flag-frame.shine::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 0.55) 50%, transparent 65%);
+  background-size: 250% 100%; animation: sweep 900ms ease-out forwards;
+}
+@keyframes sweep { from { background-position: 120% 0; } to { background-position: -40% 0; } }
+
+/* Result card details. */
+.result .grade-label { animation: pop-in 380ms 250ms cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+.result .swatch i { animation: pop-in 320ms cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+.result .swatch + .swatch i { animation-delay: 90ms; }
+.result.shake { animation: rise 300ms ease-out, shake 420ms 250ms ease-in-out; }
+@keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+.slider:active { cursor: grabbing; }
+.btn-primary { position: relative; overflow: hidden; }
+.btn-primary::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, rgb(255 255 255 / 0.18) 50%, transparent 60%);
+  background-size: 250% 100%; background-position: 120% 0; transition: background-position 600ms ease;
+}
+.btn-primary:hover::after { background-position: -40% 0; }
+
+/* Confetti in the colors of the flag. */
+.confetti { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 50; }
+.confetti i {
+  position: absolute; top: -20px; left: var(--x); border-radius: 2px;
+  animation: fall var(--t) var(--delay) cubic-bezier(0.25, 0.6, 0.4, 1) forwards;
+}
+@keyframes fall { to { transform: translate(var(--d), 110vh) rotate(var(--r)); } }
+
+/* The mark's spectrum band slowly shifts. */
+.brand .mark rect[fill^='url'] { animation: hue-shift 6s linear infinite; }
+@keyframes hue-shift { to { filter: hue-rotate(360deg); } }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
