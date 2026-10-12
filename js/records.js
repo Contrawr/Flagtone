@@ -41,6 +41,12 @@ export function migrateStorage(storage) {
   }
 }
 
+// The fields of a round worth keeping (no functions, no transient state).
+function keepRounds(results) {
+  return results.map(({ code, name, guessHex, trueHex, deltaE, percent, grade, parts }) =>
+    ({ code, name, guessHex, trueHex, deltaE, percent, grade, ...(parts ? { parts } : {}) }));
+}
+
 export class Records {
   constructor(storage = null) {
     this.storage = storage;
@@ -88,7 +94,7 @@ export class Records {
       perfects: s.perfects + game.results.filter((r) => r.percent >= PERFECT_PERCENT).length,
       percentSum: s.percentSum + game.results.reduce((sum, r) => sum + r.percent, 0),
     });
-    if (game.mode === 'daily') return { isNewBest: false, previousBest: null };
+    if (game.mode === 'daily' || game.mode === 'duel') return { isNewBest: false, previousBest: null };
     const previousBest = this.best(game.mode, game.tier);
     const score = game.finalScore();
     const isNewBest = score > 0 && (previousBest == null || score > previousBest);
@@ -104,9 +110,62 @@ export class Records {
   }
 
   saveDaily(key, results, done) {
-    const keep = results.map(({ code, name, guessHex, trueHex, deltaE, percent, grade }) =>
-      ({ code, name, guessHex, trueHex, deltaE, percent, grade }));
-    this.write(`daily:${key}`, { results: keep, done });
+    this.write(`daily:${key}`, { results: keepRounds(results), done });
+  }
+
+  // ---------- Collection: best match per flag ever played ----------
+  collection() {
+    const c = this.read('collection');
+    if (!c || typeof c !== 'object') return {};
+    return Object.fromEntries(Object.entries(c).filter(([code, n]) => flagByCode(code) && Number.isFinite(n)));
+  }
+
+  // Adds a round to the collection. Returns true if the flag is new to it.
+  collect(code, percent) {
+    const c = this.collection();
+    const isNew = !(code in c);
+    if (isNew || percent > c[code]) {
+      c[code] = percent;
+      this.write('collection', c);
+    }
+    return isNew;
+  }
+
+  // ---------- Counters for badges ----------
+  counters() {
+    const c = this.read('counters');
+    return { maxCombo: Number(c?.maxCombo) || 0, duelWins: Number(c?.duelWins) || 0 };
+  }
+
+  noteCombo(combo) {
+    const c = this.counters();
+    if (combo > c.maxCombo) this.write('counters', { ...c, maxCombo: combo });
+  }
+
+  noteDuelWin() {
+    const c = this.counters();
+    this.write('counters', { ...c, duelWins: c.duelWins + 1 });
+  }
+
+  // ---------- Badges: id → date unlocked ----------
+  unlocked() {
+    const u = this.read('badges');
+    return u && typeof u === 'object' ? u : {};
+  }
+
+  unlock(ids, date) {
+    if (!ids.length) return;
+    this.write('badges', { ...this.unlocked(), ...Object.fromEntries(ids.map((id) => [id, date])) });
+  }
+
+  // ---------- Duels played from a link, by seed ----------
+  duel(seed) {
+    const d = this.read(`duel:${seed}`);
+    return d && Array.isArray(d.results) && d.results.length === ROUNDS && d.results.every(validRound) ? d : null;
+  }
+
+  saveDuel(seed, results) {
+    this.write(`duel:${seed}`, { results: keepRounds(results) });
   }
 
   // Consecutive finished Dailies up to today (or yesterday, if today's isn't done yet).

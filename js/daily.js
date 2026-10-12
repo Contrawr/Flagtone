@@ -61,7 +61,12 @@ export function dailyCodes(key) {
   return codes;
 }
 
-// Per-round generator: picks the hidden color, then the starting hue.
+// The Daily's game seed: per-round generators are seededRandom(`${seed}:${code}`),
+// which pick the hidden color, then the starting hue.
+export function dailySeed(key) {
+  return `${SEED}:${key}`;
+}
+
 export function dailyRoundRandom(key, code) {
-  return seededRandom(`${SEED}:${key}:${code}`);
+  return seededRandom(`${dailySeed(key)}:${code}`);
 }

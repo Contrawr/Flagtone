@@ -28,3 +28,11 @@ test('shareText per mode', () => {
     'Flagtone Endless · Impossible · 1 flag 🎨\n🟥',
   );
 });
+
+test('shareText for time attack, duels and region packs', () => {
+  assert.equal(
+    shareText({ mode: 'timed', pool: 'europe', results: results('great'), score: 1234 }),
+    'Flagtone Time Attack · Europe · 1,234 points 🎨\n🟩',
+  );
+  assert.equal(shareText({ mode: 'duel', pool: 'asia', results: results('good'), score: 71 }), 'Flagtone Duel · Asia · 71% 🎨\n🟨');
+});

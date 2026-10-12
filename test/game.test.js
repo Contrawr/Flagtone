@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Game, ROUNDS, START_HEARTS } from '../js/game.js';
-import { poolFor } from '../js/flags.js';
+import { Game, ROUNDS, START_HEARTS, TIMED_SECONDS, comboMultiplier, pickCodes } from '../js/game.js';
+import { poolFor, flagByCode } from '../js/flags.js';
 import { gradeFor } from '../js/rating.js';
 
 // Rating stub: the match % is whatever number the guess string holds.
@@ -114,20 +114,12 @@ test('endless: the swap branch fires when a refill starts with the last code sho
   assert.notEqual(after, last);
 });
 
-test('classic: refills after failed loads never bring back played flags', () => {
-  const game = new Game({ rate: fixedRate });
-  game.start('classic', 'easy');
-  const size = poolFor('easy').length;
-  const played = [];
-  for (let i = 0; i < 2; i++) {
-    const code = game.nextFlagCode();
-    played.push(code);
-    game.submit(code, '80', '#000000');
-  }
-  // Every remaining code fails to load, which empties the queue.
-  for (let i = 0; i < size - 2; i++) game.nextFlagCode();
-  const after = game.nextFlagCode();
-  assert.ok(!played.includes(after));
+test('pickCodes: same five flags for the same seed, all from the pool', () => {
+  const a = pickCodes('europe', 'abc');
+  assert.deepEqual(a, pickCodes('europe', 'abc'));
+  assert.notDeepEqual(a, pickCodes('europe', 'abd'));
+  assert.equal(new Set(a).size, 5);
+  for (const c of a) assert.equal(flagByCode(c).region, 'europe');
 });
 
 test('a fixed order offers the current round until it is played', () => {
@@ -157,6 +149,71 @@ test('result carries name, colors and rating', () => {
   const r = game.submit('va', '#ffe000', '#ffe000');
   assert.deepEqual(r, {
     code: 'va', name: 'Vatican City', guessHex: '#ffe000', trueHex: '#ffe000',
-    deltaE: 0, percent: 100, grade: 'perfect', heartChange: 0,
+    deltaE: 0, percent: 100, grade: 'perfect', heartChange: 0, combo: 1, points: 100, timeBonus: 0,
   });
+});
+
+test('combo grows on Great or better and multiplies points', () => {
+  assert.equal(comboMultiplier(1), 1);
+  assert.equal(comboMultiplier(3), 1.5);
+  assert.equal(comboMultiplier(20), 2.5);
+  const game = new Game({ rate: fixedRate });
+  game.start('endless', 'easy');
+  const [a, b, c, d] = play(game, [90, 90, 90, 50]);
+  assert.deepEqual([a.combo, b.combo, c.combo, d.combo], [1, 2, 3, 0]);
+  assert.deepEqual([a.points, b.points, c.points, d.points], [90, 113, 135, 50]);
+  assert.equal(game.bestCombo, 3);
+  assert.equal(game.points, 388);
+});
+
+test('time attack: the clock runs down, good rounds add time, score is points', () => {
+  const game = new Game({ rate: fixedRate });
+  game.start('timed', 'easy');
+  assert.equal(game.timeLeft, TIMED_SECONDS);
+  assert.equal(game.tick(10), false);
+  const [perfect, great, good] = play(game, [96, 88, 75]);
+  assert.deepEqual([perfect.timeBonus, great.timeBonus, good.timeBonus], [6, 3, 0]);
+  assert.equal(game.timeLeft, 59);
+  assert.equal(game.isOver(), false);
+  assert.equal(game.tick(100), true);
+  assert.equal(game.isOver(), true);
+  assert.equal(game.tick(1), false, 'reports running out only once');
+  assert.equal(game.finalScore(), game.points);
+});
+
+test('two-color rounds average both colors and keep each part', () => {
+  const game = new Game({ rate: fixedRate });
+  game.start('classic', 'hard', { codes: ['ma', 'dz', 'tn', 'ly', 'sd'], seed: 's' });
+  const r = game.submit('ma', ['90', '70'], ['#000000', '#ffffff']);
+  assert.equal(r.percent, 80);
+  assert.equal(r.grade, 'good');
+  assert.deepEqual(r.parts.map((p) => p.percent), [90, 70]);
+  assert.equal(r.trueHex, '#000000');
+});
+
+test('which rounds hide two colors', () => {
+  const game = new Game({ rate: fixedRate });
+  game.start('timed', 'hard');
+  assert.equal(game.wantsTwoColors(0), false);
+  game.start('daily', null, { codes: ['fr', 'pe', 'hu', 'kz', 'to'] });
+  assert.equal(game.wantsTwoColors(0.9), false);
+  play(game, [90, 90, 90]);
+  assert.equal(game.wantsTwoColors(0.9), true, 'Daily flags 4 and 5');
+  game.start('classic', 'easy');
+  assert.equal(game.wantsTwoColors(0), false);
+  game.start('classic', 'hard');
+  assert.equal(game.wantsTwoColors(0.2), true);
+  assert.equal(game.wantsTwoColors(0.7), false);
+  game.start('classic', 'oceania');
+  assert.equal(game.wantsTwoColors(0.2), true);
+  assert.equal(game.wantsTwoColors(0.4), false);
+  game.start('endless', 'easy');
+  play(game, Array(10).fill(90));
+  assert.equal(game.wantsTwoColors(0.1), true);
+});
+
+test('seeded rounds are reproducible', () => {
+  const game = new Game();
+  game.start('classic', 'easy', { seed: 'x', codes: ['fr', 'de', 'it', 'es', 'jp'] });
+  assert.equal(game.roundRandom('fr')(), game.roundRandom('fr')());
 });
