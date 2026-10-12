@@ -8,6 +8,9 @@ import { GRADES, gradeFor, describeMiss } from './rating.js';
 import { Records, migrateStorage } from './records.js';
 import { dateKey, dailyCodes, dailyNumber, dailyRoundRandom, DAILY_TIERS } from './daily.js';
 import { shareText } from './share.js';
+import { sounds, setMuted, isMuted } from './sound.js';
+import { FLAG_DATA } from './flagData.js';
+import { FLAGS } from './flags.js';
 
 export const NAME = 'Flagtone';
 const TIER_LABELS = { easy: 'Easy', medium: 'Medium', hard: 'Hard', impossible: 'Impossible' };
@@ -41,6 +44,8 @@ const HELP_ICON = icon('<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5
 const ARROW_ICON = icon('<path d="M5 12h14M13 6l6 6-6 6"/>');
 const SHARE_ICON = icon('<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>');
 const EYE_ICON = icon('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>');
+const SOUND_ON = icon('<path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>');
+const SOUND_OFF = icon('<path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="m22 9-6 6M16 9l6 6"/>');
 const HEART = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.4C1 8.3 3 4.5 6.7 4.5c2.2 0 3.6 1.2 5.3 3.1 1.7-1.9 3.1-3.1 5.3-3.1 3.7 0 5.7 3.8 4.3 7.1C19.5 16.4 12 21 12 21z"/></svg>';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -128,6 +133,34 @@ function squares(results) {
     .map((r) => `<i data-grade="${r.grade}"></i>`).join('')}</div>`;
 }
 
+// Flag-colored confetti for a Perfect.
+function confetti(colors) {
+  if (reducedMotion()) return;
+  const layer = document.createElement('div');
+  layer.className = 'confetti';
+  layer.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < 70; i++) {
+    const p = document.createElement('i');
+    p.style.cssText = `--x:${Math.random() * 100}vw;--d:${(Math.random() * 40 - 20).toFixed(1)}vw;--r:${Math.round(Math.random() * 720 - 360)}deg;` +
+      `--t:${(1.6 + Math.random() * 1.4).toFixed(2)}s;--delay:${(Math.random() * 0.35).toFixed(2)}s;background:${colors[i % colors.length]};` +
+      `width:${6 + Math.random() * 6}px;height:${8 + Math.random() * 8}px`;
+    layer.append(p);
+  }
+  document.body.append(layer);
+  setTimeout(() => layer.remove(), 3400);
+}
+
+// Two drifting rows of flags for the home screen.
+function flagMarquee() {
+  const pool = FLAGS.filter((f) => f.tier === 'easy' || f.tier === 'medium').map((f) => f.code);
+  const pick = (n) => Array.from({ length: n }, () => pool[Math.floor(Math.random() * pool.length)]);
+  const row = (codes, reverse) => {
+    const imgs = codes.map((c) => `<img src="${flagUrl(c)}" alt="" style="aspect-ratio:${FLAG_DATA[c].ratio}">`).join('');
+    return `<div class="marquee-row${reverse ? ' reverse' : ''}"><div class="marquee-track">${imgs}${imgs}</div></div>`;
+  };
+  return `<div class="marquee" aria-hidden="true">${row(pick(14), false)}${row(pick(14), true)}</div>`;
+}
+
 export function boot(app) {
   const storage = safeStorage();
   migrateStorage(storage);
@@ -143,6 +176,7 @@ export function boot(app) {
   let dailyKey = null;
   let primary = null; // the button Enter presses
   let timers = [];
+  setMuted(records.read('muted') === true);
   let helpShownOnce = false; // without storage, first-visit help would reopen on every Home
 
   const help = createHelp();
@@ -161,6 +195,12 @@ export function boot(app) {
     app.innerHTML = html;
     wireTopbar();
   }
+
+  // A soft tap for buttons that don't have a sound of their own.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest?.('button');
+    if (btn && !btn.matches('#lock, #next, #sound-btn')) sounds.tap();
+  });
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
@@ -184,10 +224,19 @@ export function boot(app) {
   const brand = `<div class="brand">${MARK}<span>${NAME}</span></div>`;
   const helpButton = `<button class="icon-btn" id="help-btn" aria-label="How to play">${HELP_ICON}</button>`;
   const quitButton = `<button class="icon-btn" id="quit" aria-label="Back to home">${CLOSE_ICON}</button>`;
+  const soundButton = () => `<button class="icon-btn" id="sound-btn" aria-pressed="${!isMuted()}" aria-label="Sound">${isMuted() ? SOUND_OFF : SOUND_ON}</button>`;
 
   function wireTopbar() {
     app.querySelector('#quit')?.addEventListener('click', renderHome);
     app.querySelector('#help-btn')?.addEventListener('click', openHelp);
+    app.querySelector('#sound-btn')?.addEventListener('click', (e) => {
+      const btn = e.currentTarget;
+      setMuted(!isMuted());
+      records.write('muted', isMuted());
+      btn.innerHTML = isMuted() ? SOUND_OFF : SOUND_ON;
+      btn.setAttribute('aria-pressed', String(!isMuted()));
+      sounds.tap();
+    });
   }
 
   function modeTitle() {
@@ -213,7 +262,7 @@ export function boot(app) {
   }
 
   function gameTopbar() {
-    return topbar({ left: quitButton, center: esc(modeTitle()), right: progress() });
+    return topbar({ left: `<div class="tb-buttons">${quitButton}${soundButton()}</div>`, center: esc(modeTitle()), right: progress() });
   }
 
   // Small line above the country name.
@@ -294,12 +343,13 @@ export function boot(app) {
         <button class="btn btn-primary btn-block btn-lg" id="daily-play">Play the Daily ${ARROW_ICON}</button>`;
     }
 
-    show('home', `${topbar({ left: brand, right: helpButton })}
+    show('home', `${topbar({ left: brand, right: `${soundButton()}${helpButton}` })}
       <section class="screen home">
         <div class="hero">
           <h1>Mix the missing color.</h1>
           <p>Every flag is missing one color. Recreate it with hue, saturation and brightness, and see how close you get.</p>
         </div>
+        ${flagMarquee()}
         <div class="home-grid">
           <article class="card daily">
             <div class="card-head">
@@ -482,7 +532,7 @@ export function boot(app) {
     const name = flagByCode(code).name;
     show('round', roundShell(`<p class="eyebrow">${roundLabel()}</p>
         <h1 class="country">${esc(name)}</h1>
-        <div class="stage"><div class="flag-frame" style="--ratio:${flag.ratio}"></div></div>
+        <div class="stage"><div class="glow" aria-hidden="true"></div><div class="flag-frame enter" style="--ratio:${flag.ratio}"></div></div>
         <div class="under-flag">${game.round === 1 ? '<p class="hint">One color is wrong. Mix the real one back in.</p>' : ''}</div>`,
     `<div class="controls">
         <div class="sliders">
@@ -518,8 +568,15 @@ export function boot(app) {
         input.setAttribute('aria-valuetext', text);
       }
       flag.setGuess(color);
+      glow.style.setProperty('--glow', color);
     };
-    for (const input of [hue, sat, bri]) input.addEventListener('input', paint);
+    const glow = app.querySelector('.glow');
+    for (const input of [hue, sat, bri]) {
+      input.addEventListener('input', () => {
+        paint();
+        sounds.tick(input.value / input.max);
+      });
+    }
     paint();
 
     // Blink the area to paint by flipping it to a contrasting shade a few times.
@@ -530,6 +587,7 @@ export function boot(app) {
       const blink = () => {
         const guess = current();
         flag.setGuess(step % 2 === 0 ? contrastOf(guess) : guess);
+        if (step % 2 === 0) sounds.blink();
         if (++step < 6) blinkTimer = setTimeout(blink, 260);
       };
       blinkTimer = setTimeout(blink, 300);
@@ -549,6 +607,7 @@ export function boot(app) {
       if (game.mode === 'daily') records.saveDaily(dailyKey, game.results, game.isOver());
       const outcome = game.isOver() ? records.finishGame(game) : null;
       if (game.isOver()) pending = null;
+      sounds.lock();
       if (result.heartChange < 0) vibrate([70, 50, 70]);
       else if (result.grade === 'perfect') vibrate(25);
       renderReveal({ name, flag, result, values, outcome });
@@ -581,6 +640,19 @@ export function boot(app) {
 
     flag.svg.classList.add('revealing');
     flag.reveal();
+    const frame = app.querySelector('.flag-frame');
+    frame.classList.remove('enter');
+    frame.classList.add('shine');
+    app.querySelector('.glow')?.style.setProperty('--glow', result.trueHex);
+    setTimeout(() => {
+      sounds.grade(result.grade);
+      if (result.heartChange < 0) sounds.heartLost();
+      if (result.heartChange > 0) setTimeout(sounds.heartWon, 350);
+    }, 180);
+    if (result.grade === 'perfect') {
+      const code = result.code;
+      confetti([...(FLAG_DATA[code]?.colors.map((c) => c.hex) ?? []), result.trueHex]);
+    }
     flag.svg.setAttribute('aria-label', `Flag of ${name}`);
     setTimeout(() => flag.svg.classList.remove('revealing'), 700);
 
@@ -618,7 +690,7 @@ export function boot(app) {
     chip.addEventListener('contextmenu', (e) => e.preventDefault());
 
     const panel = app.querySelector('#panel');
-    panel.innerHTML = `<div class="card result" data-grade="${grade.id}">
+    panel.innerHTML = `<div class="card result${result.heartChange < 0 ? ' shake' : ''}" data-grade="${grade.id}">
         <p class="visually-hidden" role="status">${result.percent}% match: ${grade.label}. ${esc(tip)}</p>
         <div class="result-head">
           <div class="big-num" aria-hidden="true"><span class="count">0</span><span class="unit">%</span></div>
@@ -690,10 +762,15 @@ export function boot(app) {
         ${daily ? `<p class="fineprint">Next Daily in ${untilTomorrow()}</p>` : ''}
       </section>`);
     if (mode !== 'endless') animateScore(app.querySelector('.end-head'), score);
+    // Only at the end of a game just played, not when reviewing a finished Daily.
+    if (outcome) {
+      sounds.finish(outcome?.isNewBest || (mode === 'endless' ? score >= 10 : score >= 70));
+    }
 
     const list = app.querySelector('.results');
-    for (const r of shown) {
+    for (const [i, r] of shown.entries()) {
       const li = document.createElement('li');
+      li.style.setProperty('--i', Math.min(i, 12));
       li.innerHTML = `<span class="thumb"><img alt="" loading="lazy"></span><span class="name"></span>
         <span class="pair"><i></i><i></i></span><span class="grade-label pct" data-grade="${r.grade}">${r.percent}%</span>`;
       li.querySelector('img').src = flagUrl(r.code);
