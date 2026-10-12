@@ -1,0 +1,143 @@
+// Loads a bundled flag SVG and returns it inline with one color hidden: every
+// element painted in that color (fill, stroke or gradient stop) can be repainted
+// live with the player's guess, then restored on reveal.
+import { normalizeColor } from './colors.js';
+import { FLAG_DATA } from './flagData.js';
+
+export const flagUrl = (code) => new URL(`../flags/${code}.svg`, import.meta.url).href;
+
+export const PAINTS = ['fill', 'stroke', 'stop-color'];
+const FETCH_TIMEOUT_MS = 8000;
+
+export function paintOf(el, prop) {
+  return normalizeColor(el.style?.getPropertyValue(prop) || el.getAttribute(prop) || null);
+}
+
+// Strip anything executable before the markup is inserted into the page.
+function sanitizeSvg(svg) {
+  for (const el of svg.querySelectorAll('script, foreignObject')) el.remove();
+  for (const el of [svg, ...svg.querySelectorAll('*')]) {
+    for (const attr of [...el.attributes]) {
+      if (attr.name.toLowerCase().startsWith('on')) el.removeAttribute(attr.name);
+    }
+  }
+}
+
+// Inline SVGs share the page's id namespace: two flags both defining `#a` would
+// draw each other's shapes. Give every id a per-flag prefix and rewrite references.
+let svgCount = 0;
+function namespaceIds(svg) {
+  const prefix = `flag${++svgCount}-`;
+  const ids = new Set();
+  for (const el of svg.querySelectorAll('[id]')) {
+    ids.add(el.id);
+    el.id = prefix + el.id;
+  }
+  if (ids.size === 0) return;
+  const ref = (id) => (ids.has(id) ? prefix + id : id);
+  for (const el of [svg, ...svg.querySelectorAll('*')]) {
+    for (const attr of [...el.attributes]) {
+      let value = attr.value.replace(/url\(\s*#([^)\s]+)\s*\)/g, (_, id) => `url(#${ref(id)})`);
+      if (attr.localName === 'href' && value.startsWith('#')) value = '#' + ref(value.slice(1));
+      if (value !== attr.value) attr.value = value;
+    }
+  }
+}
+
+// Parses flag markup into an SVG element ready for analysis or play. Shapes with
+// no fill anywhere up the tree render black; an explicit black on the root keeps
+// that rendering while letting a hidden black repaint them too.
+export function prepareSvg(text) {
+  const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+  if (doc.querySelector('parsererror')) throw new Error('SVG parse error');
+  const svg = document.importNode(doc.documentElement, true);
+  sanitizeSvg(svg);
+  namespaceIds(svg);
+  if (!svg.getAttribute('fill')) svg.setAttribute('fill', '#000000');
+  return svg;
+}
+
+export async function fetchFlagSvg(code) {
+  const res = await fetch(flagUrl(code), { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return prepareSvg(await res.text());
+}
+
+// Width / height from the viewBox (or width/height attributes).
+export function svgRatio(svg) {
+  const vb = svg.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number);
+  if (vb?.length === 4 && vb[2] > 0 && vb[3] > 0) return vb[2] / vb[3];
+  const w = parseFloat(svg.getAttribute('width'));
+  const h = parseFloat(svg.getAttribute('height'));
+  return w > 0 && h > 0 ? w / h : 1.5;
+}
+
+// Every element/property pair painted in one of `colors`, with its original
+// inline value so it can be restored.
+export function paintTargets(svg, colors) {
+  const set = new Set(colors);
+  const targets = [];
+  for (const el of [svg, ...svg.querySelectorAll('*')]) {
+    for (const prop of PAINTS) {
+      if (set.has(paintOf(el, prop))) targets.push({ el, prop, original: el.style.getPropertyValue(prop) });
+    }
+  }
+  return targets;
+}
+
+export function makeRecolorable(svg, colors) {
+  const targets = paintTargets(svg, colors);
+  return {
+    paint(hex) {
+      for (const { el, prop } of targets) el.style.setProperty(prop, hex);
+    },
+    restore() {
+      for (const { el, prop, original } of targets) {
+        if (original) el.style.setProperty(prop, original);
+        else el.style.removeProperty(prop);
+      }
+    },
+  };
+}
+
+// Picks `count` different hideable colors (fewer if the flag has fewer). The
+// first pick uses one random draw, so single-color seeded games are unchanged.
+export function pickHidden(colors, random, count = 1) {
+  const first = colors[Math.floor(random() * colors.length)];
+  const picks = [first];
+  const rest = colors.filter((c) => c !== first);
+  if (count > 1 && rest.length) picks.push(rest[Math.floor(random() * rest.length)]);
+  return picks;
+}
+
+// Hideable colors come from flagData.js, so every browser hides from the same list
+// and a seeded pick is the same everywhere.
+// Returns one entry per hidden color in `hidden`; `setGuess`/`hiddenHex` address the
+// first, for single-color rounds.
+export async function loadFlag(code, random = Math.random, count = 1) {
+  const data = FLAG_DATA[code];
+  if (!data?.colors.length) throw new Error(`no hideable color for ${code}`);
+  const svg = await fetchFlagSvg(code);
+  const hidden = pickHidden(data.colors, random, count).map((c) => {
+    const recolor = makeRecolorable(svg, [c.hex, ...(c.also ?? [])]);
+    return { hex: c.hex, setGuess: recolor.paint, reveal: recolor.restore };
+  });
+  svg.removeAttribute('width');
+  svg.removeAttribute('height');
+  svg.setAttribute('class', 'flag-svg');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  return {
+    svg,
+    hidden,
+    hiddenHex: hidden[0].hex,
+    ratio: data.ratio,
+    setGuess: hidden[0].setGuess,
+    reveal() {
+      for (const h of hidden) h.reveal();
+    },
+  };
+}
+
+// Whether a flag can hide two colors.
+export const canHideTwo = (code) => (FLAG_DATA[code]?.colors.length ?? 0) >= 2;
