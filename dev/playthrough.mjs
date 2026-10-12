@@ -4,7 +4,7 @@
 // Needs Playwright (npm i -g playwright). Usage: node dev/playthrough.mjs [screenshot-dir]
 import { execSync } from 'node:child_process';
 import { join } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { serve } from './serve.mjs';
 
 async function loadPlaywright() {
@@ -267,7 +267,31 @@ try {
   await pp.waitForSelector('.toast.show');
   const clip = await pp.evaluate(() => navigator.clipboard.readText());
   log('shared:', JSON.stringify(clip));
-  check(/^Flagtone Endless · Easy · 5 flags 🎨\n🟥🟪🟥🟥🟥\nhttp/.test(clip), 'share text');
+  check(/^❤️ Flagtone Endless · Easy\n5 flags painted\n🟥🟪🟥🟥🟥\nhttp/.test(clip), 'share text');
+  // The result picture downloads as a PNG.
+  const [download] = await Promise.all([pp.waitForEvent('download'), pp.click('#save-image')]);
+  check(download.suggestedFilename() === 'flagtone.png', 'result picture downloads');
+  if (shots) await download.saveAs(join(shots, '29-share-endless.png'));
+  // Cards for the other modes, drawn straight from the module.
+  const cards = await pp.evaluate(async () => {
+    const { drawShareCard } = await import('/js/shareCard.js');
+    const r = (grade, percent) => ({ grade, percent });
+    const five = [r('perfect', 97), r('great', 88), r('good', 74), r('close', 55), r('off', 21)];
+    const url = 'https://contrawr.github.io/Flagtone/';
+    const all = {
+      daily: { mode: 'daily', results: five, score: 67, dailyNumber: 12, streak: 5, url },
+      duel: { mode: 'duel', pool: 'europe', results: five, score: 67, duel: { me: 67, them: 59, result: 'win' }, url },
+      timed: { mode: 'timed', pool: 'asia', results: [...five, ...five, ...five], score: 1840, bestCombo: 4, url },
+    };
+    const out = {};
+    for (const [name, o] of Object.entries(all)) out[name] = (await drawShareCard(o)).toDataURL('image/png');
+    return out;
+  });
+  if (shots) {
+    for (const [name, data] of Object.entries(cards)) {
+      writeFileSync(join(shots, `30-share-${name}.png`), Buffer.from(data.split(',')[1], 'base64'));
+    }
+  }
 
   // ---------- Duel: a Classic region game, a link, a friend plays it ----------
   await pp.click('#home');

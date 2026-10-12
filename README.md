@@ -24,6 +24,10 @@ Great or better in a row builds a **combo**. Every flag you play joins your
 **collection** with your best match, and 20 **badges** reward milestones. All of it
 is kept in your browser.
 
+Results share as spoiler-free text with colored squares, plus a picture of your
+score on phones (or **Save as picture** on a computer). Links to the game show a
+preview card in chats and social apps.
+
 Sound effects (synthesized, with a mute button), phone vibration and animations
 make each round feel alive. Animations turn off when your device asks for reduced
 motion. Light and dark themes follow your device.
@@ -71,7 +75,9 @@ The game is plain files at the repository root, so GitHub can host it as is:
    **master** and **/ (root)**, and save.
 3. After a minute the game is live at `https://<your-user>.github.io/<repository>/`.
 
-Every push to `master` updates it. To use the repository's social preview image,
+Every push to `master` updates it, and players keep their progress: it's stored in
+their browser, not in the game files. If you fork or rename the repository, update
+the preview link in `index.html` (`og:url`, `og:image`, `twitter:image`). To use the repository's social preview image,
 upload `docs/social-card.png` under **Settings → General → Social preview**.
 
 ## Develop
@@ -99,6 +105,7 @@ GitHub Actions runs both test suites on every pull request.
 | `js/sound.js` | Synthesized sounds and vibration |
 | `js/daily.js` | Date keys and the seeded Daily selection |
 | `js/share.js` | Spoiler-free result text |
+| `js/shareCard.js` | Draws the result picture to share |
 | `js/flagLoader.js` | Loads a flag SVG and repaints its hidden color |
 | `js/flags.js` | Countries, difficulty tiers and regions |
 | `js/flagData.js` | Generated: each flag's ratio and hideable colors |

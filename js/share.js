@@ -1,5 +1,5 @@
 // Spoiler-free result text to paste anywhere: one colored square per flag.
-import { GRADES } from './rating.js';
+import { GRADES, gradeFor } from './rating.js';
 
 export const POOL_LABELS = {
   easy: 'Easy', medium: 'Medium', hard: 'Hard', impossible: 'Impossible',
@@ -20,12 +20,31 @@ export function gradeSquares(results) {
   return lines.join('\n');
 }
 
-export function shareText({ mode, tier, pool = tier, results, score, dailyNumber, url }) {
+// Title line, score line, the squares, an optional extra line, then the link.
+export function shareText({ mode, tier, pool = tier, results, score, dailyNumber, url, streak = 0, bestCombo = 0, duel = null }) {
   const label = POOL_LABELS[pool];
+  const pct = (n) => `${n}% · ${gradeFor(n).label}`;
   let title;
-  if (mode === 'daily') title = `Flagtone Daily #${dailyNumber} · ${score}%`;
-  else if (mode === 'classic' || mode === 'duel') title = `Flagtone ${mode === 'duel' ? 'Duel' : 'Classic'} · ${label} · ${score}%`;
-  else if (mode === 'timed') title = `Flagtone Time Attack · ${label} · ${score.toLocaleString('en-US')} points`;
-  else title = `Flagtone Endless · ${label} · ${score} ${score === 1 ? 'flag' : 'flags'}`;
-  return [`${title} 🎨`, gradeSquares(results), url].filter(Boolean).join('\n');
+  let line;
+  const extra = [];
+  if (mode === 'daily') {
+    title = `🎨 Flagtone Daily #${dailyNumber}`;
+    line = pct(score);
+    if (streak > 1) extra.push(`🔥 ${streak}-day streak`);
+  } else if (mode === 'duel') {
+    title = `⚔️ Flagtone Duel · ${label}`;
+    line = pct(score);
+    if (duel) extra.push(`${{ win: 'I won', loss: 'I lost', draw: 'A draw' }[duel.result]}, ${duel.me}% to ${duel.them}%`);
+  } else if (mode === 'timed') {
+    title = `⏱️ Flagtone Time Attack · ${label}`;
+    line = `${score.toLocaleString('en-US')} points · ${results.length} ${results.length === 1 ? 'flag' : 'flags'}`;
+    if (bestCombo >= 2) extra.push(`🔥 Best combo ×${bestCombo}`);
+  } else if (mode === 'endless') {
+    title = `❤️ Flagtone Endless · ${label}`;
+    line = `${score} ${score === 1 ? 'flag' : 'flags'} painted`;
+  } else {
+    title = `🎨 Flagtone Classic · ${label}`;
+    line = pct(score);
+  }
+  return [title, line, gradeSquares(results), ...extra, url].filter(Boolean).join('\n');
 }

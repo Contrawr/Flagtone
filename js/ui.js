@@ -10,6 +10,7 @@ import { GRADES, gradeFor, describeMiss } from './rating.js';
 import { Records, migrateStorage } from './records.js';
 import { dateKey, dailyCodes, dailyNumber, dailySeed, seededRandom, DAILY_TIERS } from './daily.js';
 import { shareText, POOL_LABELS } from './share.js';
+import { shareCardFile } from './shareCard.js';
 import { sounds, setMuted, isMuted } from './sound.js';
 import { FLAG_DATA } from './flagData.js';
 import { ACHIEVEMENTS, newlyUnlocked } from './achievements.js';
@@ -48,6 +49,7 @@ const HELP_ICON = icon('<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5
 const ARROW_ICON = icon('<path d="M5 12h14M13 6l6 6-6 6"/>');
 const SHARE_ICON = icon('<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>');
 const SWORDS_ICON = icon('<path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M9.5 6.5 14 2h3v3l-4.5 4.5M5 14l-2 2M7 17l-3 3"/>');
+const IMAGE_ICON = icon('<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>');
 const EYE_ICON = icon('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>');
 const SOUND_ON = icon('<path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>');
 const SOUND_OFF = icon('<path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="m22 9-6 6M16 9l6 6"/>');
@@ -301,10 +303,22 @@ export function boot(app) {
     return `Best: ${best}% average`;
   }
 
-  async function share(text) {
+  const coarse = () => window.matchMedia?.('(pointer: coarse)').matches;
+
+  // Draws the result picture ahead of time: phones only allow sharing straight
+  // from the tap, with no waiting in between.
+  function prepareCard(options) {
+    const card = { file: null };
+    shareCardFile(options).then((file) => { card.file = file; }).catch(() => {});
+    return card;
+  }
+
+  async function share(text, card = null) {
     try {
-      if (navigator.share && window.matchMedia?.('(pointer: coarse)').matches) {
-        await navigator.share({ text });
+      if (navigator.share && coarse()) {
+        const files = card?.file ? [card.file] : [];
+        if (files.length && navigator.canShare?.({ files, text })) await navigator.share({ files, text });
+        else await navigator.share({ text });
         return;
       }
     } catch (err) {
@@ -322,6 +336,18 @@ export function boot(app) {
       area.remove();
       toast(ok ? 'Copied to the clipboard' : 'Couldn’t copy');
     }
+  }
+
+  function saveImage(card) {
+    if (!card.file) {
+      toast('The picture is still being drawn');
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(card.file);
+    a.download = card.file.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
   function siteUrl() {
@@ -479,9 +505,9 @@ export function boot(app) {
     const sameDay = (action) => () => (dateKey() === today ? action() : renderHome());
     if (daily?.done) {
       animateScore(app.querySelector('.daily-score'), dailyAverage);
-      app.querySelector('#daily-share').addEventListener('click', sameDay(() => share(shareText({
-        mode: 'daily', results: daily.results, score: dailyAverage, dailyNumber: dailyNumber(today), url: siteUrl(),
-      }))));
+      const shared = { mode: 'daily', results: daily.results, score: dailyAverage, dailyNumber: dailyNumber(today), url: siteUrl(), streak };
+      const card = prepareCard(shared);
+      app.querySelector('#daily-share').addEventListener('click', sameDay(() => share(shareText(shared), card)));
       app.querySelector('#daily-review').addEventListener('click', sameDay(reviewDaily));
     } else {
       app.querySelector('#daily-play').addEventListener('click', sameDay(startDaily));
@@ -1028,6 +1054,7 @@ export function boot(app) {
         <div class="end-actions">
           ${canChallenge ? `<button class="btn btn-primary btn-block btn-lg" id="challenge">${SWORDS_ICON}${isDuel ? 'Challenge them back' : 'Challenge a friend'}</button>` : ''}
           <button class="btn ${canChallenge ? 'btn-secondary' : 'btn-primary btn-lg'} btn-block" id="share">${SHARE_ICON}Share result</button>
+          ${coarse() ? '' : `<button class="btn btn-ghost btn-block" id="save-image">${IMAGE_ICON}Save as picture</button>`}
           <div class="btn-row">
             ${daily || isDuel ? '' : '<button class="btn btn-secondary" id="again">Play again</button>'}
             <button class="btn btn-secondary" id="home"${daily || isDuel ? ' style="grid-column: 1 / -1"' : ''}>Home</button>
@@ -1066,16 +1093,21 @@ export function boot(app) {
       list.append(li);
     }
 
-    const text = shareText({
-      mode, pool: game.pool, results: game.results, score,
-      dailyNumber: daily ? dailyNumber(dailyKey) : null, url: siteUrl(),
-    });
-    app.querySelector('#share').addEventListener('click', () => share(text));
+    const shared = {
+      mode, pool: game.pool, results: game.results, score, url: siteUrl(),
+      dailyNumber: daily ? dailyNumber(dailyKey) : null,
+      streak: daily ? records.dailyStreak(dailyKey) : 0,
+      bestCombo: game.bestCombo,
+      duel: isDuel && duel ? duelOutcome(game.results.map((r) => r.percent), duel.percents) : null,
+    };
+    const card = prepareCard(shared);
+    app.querySelector('#share').addEventListener('click', () => share(shareText(shared), card));
+    app.querySelector('#save-image')?.addEventListener('click', () => saveImage(card));
     app.querySelector('#challenge')?.addEventListener('click', () => {
       const url = duelUrl(siteUrl(), {
         pool: game.pool, seed: game.seed, codes: game.codes, percents: game.results.map((r) => r.percent),
       });
-      share(`Can you beat my ${score}% on five ${POOL_LABELS[game.pool]} flags in Flagtone? ⚔️\n${url}`);
+      share(`⚔️ I scored ${score}% on five ${POOL_LABELS[game.pool]} flags in Flagtone. Can you beat me?\n${url}`);
     });
     app.querySelector('#home').addEventListener('click', renderHome);
     const again = app.querySelector('#again');
