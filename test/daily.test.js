@@ -45,3 +45,8 @@ test('dailyRoundRandom differs per flag and per day', () => {
   assert.notEqual(dailyRoundRandom('2026-10-09', 'fr')(), dailyRoundRandom('2026-10-09', 'de')());
   assert.notEqual(dailyRoundRandom('2026-10-09', 'fr')(), dailyRoundRandom('2026-10-10', 'fr')());
 });
+
+test('the Daily seed reproduces the per-round generator', async () => {
+  const { dailySeed } = await import('../js/daily.js');
+  assert.equal(seededRandom(`${dailySeed('2026-10-09')}:fr`)(), dailyRoundRandom('2026-10-09', 'fr')());
+});

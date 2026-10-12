@@ -27,3 +27,12 @@ test('flagByCode', () => {
   assert.equal(flagByCode('va').name, 'Vatican City');
   assert.equal(flagByCode('zz'), undefined);
 });
+
+test('every flag has a region, and pools cover tiers and regions', async () => {
+  const { REGIONS, POOLS } = await import('../js/flags.js');
+  for (const f of FLAGS) assert.ok(REGIONS.includes(f.region), f.code);
+  assert.equal(REGIONS.reduce((n, r) => n + poolFor(r).length, 0), FLAGS.length);
+  assert.equal(POOLS.length, 9);
+  assert.equal(flagByCode('ru').region, 'europe');
+  assert.equal(flagByCode('fj').region, 'oceania');
+});

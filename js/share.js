@@ -1,7 +1,10 @@
 // Spoiler-free result text to paste anywhere: one colored square per flag.
 import { GRADES } from './rating.js';
 
-const TIER_LABELS = { easy: 'Easy', medium: 'Medium', hard: 'Hard', impossible: 'Impossible' };
+export const POOL_LABELS = {
+  easy: 'Easy', medium: 'Medium', hard: 'Hard', impossible: 'Impossible',
+  europe: 'Europe', africa: 'Africa', americas: 'Americas', asia: 'Asia', oceania: 'Oceania',
+};
 const SQUARES_PER_LINE = 10;
 
 export function flagEmoji(code) {
@@ -17,10 +20,12 @@ export function gradeSquares(results) {
   return lines.join('\n');
 }
 
-export function shareText({ mode, tier, results, score, dailyNumber, url }) {
+export function shareText({ mode, tier, pool = tier, results, score, dailyNumber, url }) {
+  const label = POOL_LABELS[pool];
   let title;
   if (mode === 'daily') title = `Flagtone Daily #${dailyNumber} · ${score}%`;
-  else if (mode === 'classic') title = `Flagtone Classic · ${TIER_LABELS[tier]} · ${score}%`;
-  else title = `Flagtone Endless · ${TIER_LABELS[tier]} · ${score} ${score === 1 ? 'flag' : 'flags'}`;
+  else if (mode === 'classic' || mode === 'duel') title = `Flagtone ${mode === 'duel' ? 'Duel' : 'Classic'} · ${label} · ${score}%`;
+  else if (mode === 'timed') title = `Flagtone Time Attack · ${label} · ${score.toLocaleString('en-US')} points`;
+  else title = `Flagtone Endless · ${label} · ${score} ${score === 1 ? 'flag' : 'flags'}`;
   return [`${title} 🎨`, gradeSquares(results), url].filter(Boolean).join('\n');
 }

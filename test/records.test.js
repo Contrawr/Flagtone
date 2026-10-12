@@ -147,3 +147,34 @@ test('progress saved under the old name is copied over once', () => {
   migrateStorage(null);
   migrateStorage({ getItem() { throw new Error('blocked'); } });
 });
+
+test('collection keeps the best match per flag and says when a flag is new', () => {
+  const records = new Records(memoryStorage());
+  assert.equal(records.collect('fr', 60), true);
+  assert.equal(records.collect('fr', 90), false);
+  assert.equal(records.collect('fr', 70), false);
+  assert.deepEqual(records.collection(), { fr: 90 });
+});
+
+test('counters, badges and duels persist', () => {
+  const records = new Records(memoryStorage());
+  records.noteCombo(3);
+  records.noteCombo(2);
+  records.noteDuelWin();
+  assert.deepEqual(records.counters(), { maxCombo: 3, duelWins: 1 });
+  records.unlock(['combo-3'], '2026-10-12');
+  records.unlock([], '2026-10-13');
+  assert.deepEqual(records.unlocked(), { 'combo-3': '2026-10-12' });
+  assert.equal(records.duel('abc'), null);
+  const game = finished('daily', null, [90, 80, 70, 60, 50]);
+  records.saveDuel('abc', game.results);
+  assert.deepEqual(records.duel('abc').results.map((r) => r.percent), [90, 80, 70, 60, 50]);
+});
+
+test('duel games have no best', () => {
+  const records = new Records(memoryStorage());
+  const game = new Game({ rate: fixedRate });
+  game.start('duel', 'easy', { codes: ['fr', 'de', 'it', 'es', 'jp'], seed: 's' });
+  for (const p of [90, 90, 90, 90, 90]) game.submit(game.nextFlagCode(), guessFor(p), '#000000');
+  assert.equal(records.finishGame(game).isNewBest, false);
+});

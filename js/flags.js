@@ -62,8 +62,26 @@ export const FLAGS = TIERS.flatMap((tier) =>
   Object.entries(byTier[tier]).map(([code, name]) => ({ code, name, tier })),
 );
 
-export function poolFor(tier) {
-  return FLAGS.filter((f) => f.tier === tier);
+export const REGIONS = ['europe', 'africa', 'americas', 'asia', 'oceania'];
+
+// UN geoscheme continents, with Russia, Cyprus and Kosovo in Europe and the
+// Caucasus and Turkey in Asia.
+const REGION_CODES = {
+  europe: 'gb fr de it es ru ch se no dk fi nl be gr pt ie at pl ua va is ee lv lt cz sk hu ro bg hr si rs ba me mk al by md lu mc li ad sm mt cy xk',
+  africa: 'za eg ng ma dz tn ly sd et ke tz ug rw gh ci sn cm cd cg ao mz zw zm bw na mg ml ne td bf gn so ss er dj ga gq bj tg lr sl gm gw mr cf bi mw ls sz cv st km sc mu',
+  americas: 'us br ca mx ar jm cu co cl pe ve ec bo py uy gy sr cr pa ni hn sv gt bz do ht bs bb tt ag dm gd kn lc vc',
+  asia: 'jp cn in kr tr il sa id th vn ph my sg pk bd ir iq kp tw lk np jo lb sy ye om ae qa kw bh ps af kz uz tm kg tj mn mm kh la ge am az bt mv bn tl',
+  oceania: 'au nz fj pg sb vu ws to ki tv nr pw fm mh',
+};
+const regionOf = new Map(Object.entries(REGION_CODES).flatMap(([region, codes]) =>
+  codes.split(' ').map((code) => [code, region])));
+for (const f of FLAGS) f.region = regionOf.get(f.code);
+
+// A pool is a difficulty tier or a region.
+export const POOLS = [...TIERS, ...REGIONS];
+
+export function poolFor(pool) {
+  return FLAGS.filter((f) => f.tier === pool || f.region === pool);
 }
 
 export function flagByCode(code) {

@@ -268,7 +268,118 @@ try {
   const clip = await pp.evaluate(() => navigator.clipboard.readText());
   log('shared:', JSON.stringify(clip));
   check(/^Flagtone Endless · Easy · 5 flags 🎨\n🟥🟪🟥🟥🟥\nhttp/.test(clip), 'share text');
+
+  // ---------- Duel: a Classic region game, a link, a friend plays it ----------
+  await pp.click('#home');
+  await pp.click('[data-value=classic]');
+  await pp.click('[data-value=region]');
+  check(await pp.$eval('.seg-tier', (el) => el.hidden) && !(await pp.$eval('.seg-region', (el) => el.hidden)), 'region picker shows');
+  await pp.click('[data-value=europe]');
+  await shot(pp, '20-home-regions');
+  await pp.click('#start');
+  const europe = await pp.evaluate(async () => {
+    const { FLAGS } = await import('/js/flags.js');
+    return FLAGS.filter((f) => f.region === 'europe').map((f) => f.name);
+  });
+  for (let i = 0; i < 5; i++) {
+    await pp.waitForSelector('#lock');
+    check(europe.includes(await pp.textContent('.country')), 'region pack plays its own flags');
+    const hsb = await answer();
+    await playRound(pp, { hsb: i < 2 ? hsb : [(hsb[0] + 60) % 360, hsb[1], hsb[2]] });
+    await pp.click('#next');
+  }
+  await pp.waitForSelector('#challenge');
+  await pp.click('#challenge');
+  await pp.waitForFunction(async () => /\?duel=/.test(await navigator.clipboard.readText()));
+  const invite = await pp.evaluate(() => navigator.clipboard.readText());
+  log('duel:', JSON.stringify(invite.slice(0, 70)));
+  const duelLink = invite.match(/http\S+/)[0];
+
+  const friend = await ctx.newPage();
+  friend.on('pageerror', (e) => errors.push(e.message));
+  await friend.goto(duelLink);
+  await friend.waitForSelector('#duel-play');
+  check(/Europe/.test(await friend.textContent('.duel-card')), 'duel card names the pack');
+  await shot(friend, '21-duel-invite');
+  await friend.click('#duel-play');
+  for (let i = 0; i < 5; i++) {
+    await friend.waitForSelector('#lock');
+    await playRound(friend, { hsb: [0, 0, 0] });
+    await friend.click('#next');
+  }
+  await friend.waitForSelector('.duel-result');
+  check((await friend.$$('.duel-table .duel-name')).length === 6, 'duel table lists 5 flags and the average');
+  check(/They win/.test(await friend.textContent('.duel-verdict')), 'duel verdict');
+  await shot(friend, '22-duel-end');
+  await noOverflow(friend, 'duel end');
+  await friend.click('#home');
+  await friend.waitForSelector('#duel-review');
+  check(/They won/.test(await friend.textContent('.duel-card h2')), 'home shows the played duel');
+
+  // Collection and badges.
+  await friend.click('#open-collection');
+  await friend.waitForSelector('.tiles');
+  check((await friend.$$('.tile:not(.locked)')).length >= 10, 'collection lists played flags');
+  await shot(friend, '23-collection');
+  await noOverflow(friend, 'collection');
+  await friend.click('#quit');
+  await friend.click('#open-badges');
+  await friend.waitForSelector('.badge-grid');
+  check((await friend.$$('.badge-card:not(.locked)')).length >= 2, 'badges unlocked');
+  await shot(friend, '24-badges');
+  await noOverflow(friend, 'badges');
   await ctx.close();
+
+  // ---------- Two colors ----------
+  const ctx2 = await browser.newContext({ viewport: { width: 375, height: 740 }, deviceScaleFactor: 2 });
+  await ctx2.route('**/js/game.js', async (route) => {
+    const body = await (await route.fetch()).text();
+    await route.fulfill({ contentType: 'text/javascript', body: `${body}\nGame.prototype.wantsTwoColors = () => true;\n` });
+  });
+  const two = await ctx2.newPage();
+  two.on('pageerror', (e) => errors.push(e.message));
+  await two.goto(`${url}/`);
+  await two.click('dialog.help button');
+  await two.click('#start');
+  await two.waitForSelector('.color-tab');
+  await setSliders(two, 0, 100, 100);
+  await two.click('.color-tab[data-i="1"]');
+  check(await two.$eval('.color-tab[data-i="1"]', (t) => t.getAttribute('aria-selected')) === 'true', 'second color selected');
+  await setSliders(two, 240, 100, 50);
+  const tabColors = await two.$$eval('.color-tab i', (els) => els.map((i) => i.style.background));
+  check(tabColors[0] !== tabColors[1], `each color keeps its own mix (${tabColors})`);
+  await shot(two, '25-two-colors');
+  await noOverflow(two, 'two colors');
+  await two.click('#lock');
+  await two.waitForSelector('#next');
+  check((await two.$$('.swatch-pair')).length === 2, 'reveal shows both colors');
+  await two.click('.compare .color-tab[data-i="1"]');
+  await shot(two, '26-two-colors-reveal');
+  await ctx2.close();
+
+  // ---------- Time Attack ----------
+  const timed = await newPage({ width: 375, height: 667 });
+  await timed.clock.install();
+  await timed.goto(`${url}/`);
+  await timed.click('dialog.help button');
+  await timed.click('[data-value=timed]');
+  await timed.click('#start');
+  await timed.waitForSelector('#lock');
+  await headerFits(timed, 'timed');
+  await timed.clock.runFor(2500);
+  const left = Number(await timed.textContent('#timer span'));
+  check(left < 60 && left > 50, `the clock runs (${left}s)`);
+  log('timed', await playRound(timed));
+  check(await timed.$('#next.auto'), 'timed reveal auto-advances');
+  await shot(timed, '27-timed-reveal');
+  await timed.clock.runFor(2000);
+  await timed.waitForSelector('#lock');
+  await timed.clock.fastForward(61_000);
+  await timed.clock.runFor(1000);
+  await timed.waitForSelector('.end');
+  check(/Time’s up/.test(await timed.textContent('h1')), 'timed ends');
+  await shot(timed, '28-timed-end');
+  await timed.close();
 
   // ---------- Dark theme ----------
   for (const [name, viewport] of [['phone', { width: 375, height: 740 }], ['desktop', { width: 1280, height: 800 }]]) {
