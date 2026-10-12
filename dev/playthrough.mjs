@@ -84,6 +84,12 @@ try {
   await shot(page, '01-help');
   await page.click('dialog.help button');
   await shot(page, '02-home');
+  // The sound toggle flips and is remembered.
+  await page.click('#sound-btn');
+  check(await page.$eval('#sound-btn', (b) => b.getAttribute('aria-pressed')) === 'false', 'sound muted');
+  await page.reload();
+  check(await page.$eval('#sound-btn', (b) => b.getAttribute('aria-pressed')) === 'false', 'mute remembered');
+  await page.click('#sound-btn');
   await noOverflow(page, 'home');
 
   // Daily: play two rounds, leave, resume, finish.
@@ -170,8 +176,6 @@ try {
   await desk.click('dialog.help button');
   await desk.click('#start');
   await desk.waitForSelector('#lock');
-  await shot(desk, '14-desktop-round');
-  await noOverflow(desk, 'desktop round');
   // The hint blinks the hidden area: its paint changes during the first second.
   const paintNow = () => desk.evaluate(() => [...document.querySelectorAll('.flag-svg [style]')].map((el) => el.style.cssText).join());
   const seen = new Set();
@@ -180,6 +184,8 @@ try {
     await desk.waitForTimeout(120);
   }
   check(seen.size >= 2, 'hidden area blinks');
+  await shot(desk, '14-desktop-round');
+  await noOverflow(desk, 'desktop round');
   // Holding Enter locks once and stays on the reveal.
   await desk.focus('#hue');
   await desk.keyboard.down('Enter');
@@ -238,7 +244,7 @@ try {
   await pp.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await pp.mouse.down();
   check(await pp.$eval('#compare', (el) => el.getAttribute('aria-pressed')) === 'true', 'compare pressed');
-  check(await pp.$$eval('.flag-svg [style*="fill"]', (els) => els.length) > 0, 'guess painted while holding');
+  check(await pp.$$eval('.flag-svg[style*="fill"], .flag-svg [style*="fill"], .flag-svg [style*="stroke"]', (els) => els.length) > 0, 'guess painted while holding');
   await pp.mouse.up();
   check(await pp.$eval('#compare', (el) => el.getAttribute('aria-pressed')) === 'false', 'compare released');
 
