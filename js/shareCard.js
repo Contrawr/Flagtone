@@ -38,13 +38,16 @@ function drawMark(ctx, x, y, h) {
 }
 
 // What the card says, per mode.
-export function cardContent({ mode, pool, results, score, dailyNumber, url, streak = 0, bestCombo = 0, duel = null }) {
+export function cardContent({ mode, pool, results, score, dailyNumber, url, streak = 0, bestCombo = 0, duel = null, rank = null }) {
   const label = POOL_LABELS[pool];
   const n = results.length;
   const c = { results, url: url.replace(/^https?:\/\//, '').replace(/\/$/, ''), extra: '' };
   if (mode === 'daily') {
     Object.assign(c, { eyebrow: `Daily #${dailyNumber}`, big: `${score}`, unit: '%', grade: gradeFor(score) });
-    if (streak > 1) c.extra = `🔥 ${streak}-day streak`;
+    c.extra = [
+      rank?.place ? `🏆 #${rank.place} of ${rank.total.toLocaleString('en-US')}` : '',
+      streak > 1 ? `🔥 ${streak}-day streak` : '',
+    ].filter(Boolean).join(' · ');
   } else if (mode === 'timed') {
     Object.assign(c, { eyebrow: `Time Attack · ${label}`, big: score.toLocaleString('en-US'), unit: ' pts' });
     c.extra = `${n} ${n === 1 ? 'flag' : 'flags'}${bestCombo >= 2 ? ` · 🔥 best combo ×${bestCombo}` : ''}`;

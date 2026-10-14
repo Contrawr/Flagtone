@@ -650,3 +650,46 @@ h1, h2, h3, p { margin: 0; }
   .app[data-screen='collection'], .app[data-screen='badges'] { max-width: 920px; }
   .duel-card { max-width: none; }
 }
+
+/* ---------- Daily ranking ---------- */
+.rank-line {
+  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 40px;
+  margin: -4px 0 14px; padding: 0 12px; border: 0; border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--text);
+  font-size: 15px; font-weight: 600; cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.rank-line[hidden] { display: none; }
+.rank-line span { display: inline-flex; color: var(--text-2); }
+.rank-line svg { width: 16px; height: 16px; }
+.ranking { margin-top: 18px; padding: 18px; }
+.ranking h2 { margin: 0 0 4px; font-size: 18px; }
+.ranking .card-text { margin: 4px 0 12px; }
+.rank-head { display: flex; align-items: center; gap: 12px; margin: 6px 0 12px; }
+.rank-head .big-num { font-size: 40px; }
+.rank-head .unit { font-size: 17px; }
+.rank-list { list-style: none; margin: 0; padding: 0; }
+.rank-list li {
+  display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 10px;
+  padding: 7px 8px; border-radius: var(--radius-sm); font-size: 15px;
+}
+.rank-list li + li { border-top: 1px solid var(--border); }
+.rank-list li.me { background: var(--surface-2); border-top-color: transparent; font-weight: 650; }
+.rank-list li.me + li { border-top-color: transparent; }
+.rank-list li.gap { display: block; padding: 2px 0; text-align: center; color: var(--text-3); border: 0; }
+.rank-place { color: var(--text-2); font-weight: 650; font-variant-numeric: tabular-nums; text-align: center; }
+.rank-list li:nth-child(1) .rank-place::before { content: '🥇'; }
+.rank-list li:nth-child(2) .rank-place::before { content: '🥈'; }
+.rank-list li:nth-child(3) .rank-place::before { content: '🥉'; }
+.rank-list li:nth-child(-n+3) .rank-place { font-size: 0; }
+.rank-list li:nth-child(-n+3) .rank-place::before { font-size: 18px; }
+.rank-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-list .grade-label { min-width: 54px; justify-content: center; font-variant-numeric: tabular-nums; }
+.nick-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.nick-form input {
+  min-width: 0; height: 48px; padding: 0 14px; border: 1px solid var(--border-strong); border-radius: var(--radius);
+  background: var(--surface); font-size: 16px;
+}
+.nick-form input:focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: transparent; }
+.nick-error { min-height: 0; margin-top: 6px; font-size: 13px; color: var(--off); }
+.nick-error:empty { display: none; }
+.ranking .fineprint { margin-top: 12px; }

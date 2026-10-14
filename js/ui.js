@@ -11,6 +11,7 @@ import { Records, migrateStorage } from './records.js';
 import { dateKey, dailyCodes, dailyNumber, dailySeed, seededRandom, DAILY_TIERS } from './daily.js';
 import { shareText, POOL_LABELS } from './share.js';
 import { shareCardFile } from './shareCard.js';
+import { rankingEnabled, cleanNickname, submitDaily, fetchBoard, topPercent, NICKNAME_MAX } from './ranking.js';
 import { sounds, setMuted, isMuted } from './sound.js';
 import { FLAG_DATA } from './flagData.js';
 import { ACHIEVEMENTS, newlyUnlocked } from './achievements.js';
@@ -50,6 +51,7 @@ const ARROW_ICON = icon('<path d="M5 12h14M13 6l6 6-6 6"/>');
 const SHARE_ICON = icon('<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>');
 const SWORDS_ICON = icon('<path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M9.5 6.5 14 2h3v3l-4.5 4.5M5 14l-2 2M7 17l-3 3"/>');
 const IMAGE_ICON = icon('<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>');
+const TROPHY = '🏆';
 const EYE_ICON = icon('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>');
 const SOUND_ON = icon('<path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>');
 const SOUND_OFF = icon('<path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="m22 9-6 6M16 9l6 6"/>');
@@ -371,6 +373,78 @@ export function boot(app) {
     fresh.forEach((a, i) => setTimeout(() => badgeToast(a), 900 + i * 2600));
   }
 
+  // ---------- Daily ranking ----------
+  // Sends today's finished Daily if it hasn't been sent yet, then fetches the board.
+  // Resolves to the board, or null without a nickname or on a network error.
+  async function refreshRank(day, results) {
+    const player = records.player();
+    if (!rankingEnabled() || !player.nickname) return null;
+    try {
+      if (!records.ranked(day)) {
+        await submitDaily({ day, playerId: player.id, nickname: player.nickname, results });
+      }
+      const board = await fetchBoard({ day, playerId: player.id });
+      if (board.place) records.saveRanked(day, { place: board.place, total: board.total });
+      return board;
+    } catch (err) {
+      console.warn('Ranking unavailable:', err);
+      return null;
+    }
+  }
+
+  // The ranking card on a finished Daily: a nickname form the first time, then
+  // your place and the top ten.
+  function mountRanking(el, day, results, onRank) {
+    const token = session;
+    const player = records.player();
+    if (!player.nickname) {
+      el.innerHTML = `<h2>${TROPHY} Today’s ranking</h2>
+        <p class="card-text">Pick a nickname to see your place. No account needed.</p>
+        <form class="nick-form" novalidate>
+          <input id="nickname" name="nickname" maxlength="${NICKNAME_MAX}" autocomplete="nickname" autocapitalize="off"
+            spellcheck="false" placeholder="Nickname" aria-label="Nickname" required>
+          <button class="btn btn-primary" type="submit">Join</button>
+        </form>
+        <p class="nick-error" role="alert"></p>`;
+      const form = el.querySelector('form');
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = cleanNickname(form.nickname.value);
+        if (!name) {
+          el.querySelector('.nick-error').textContent = `Use 2 to ${NICKNAME_MAX} letters, numbers, spaces, dots, dashes or underscores.`;
+          return;
+        }
+        records.setNickname(name);
+        mountRanking(el, day, results, onRank);
+      });
+      return;
+    }
+    el.innerHTML = `<h2>${TROPHY} Today’s ranking</h2><p class="card-text rank-status">Loading…</p>`;
+    refreshRank(day, results).then((board) => {
+      if (token !== session || !el.isConnected) return;
+      if (!board?.place) {
+        el.innerHTML = `<h2>${TROPHY} Today’s ranking</h2>
+          <p class="card-text rank-status">Couldn’t reach the ranking right now.</p>
+          <button class="btn btn-secondary btn-block" id="rank-retry">Try again</button>`;
+        el.querySelector('#rank-retry').addEventListener('click', () => mountRanking(el, day, results, onRank));
+        return;
+      }
+      onRank?.(board);
+      const row = (r) => `<li${r.me ? ' class="me"' : ''}><span class="rank-place">${r.place}</span>
+          <span class="rank-name">${esc(r.nickname)}</span>
+          <span class="grade-label" data-grade="${gradeFor(r.score).id}">${r.score}%</span></li>`;
+      const inTop = board.top.some((r) => r.me);
+      const top = topPercent(board.place, board.total);
+      el.innerHTML = `<h2>${TROPHY} Today’s ranking</h2>
+        <div class="rank-head">
+          <div class="big-num">#${board.place}<span class="unit"> of ${fmt(board.total)}</span></div>
+          ${top ? `<span class="pill">${top}</span>` : ''}
+        </div>
+        <ol class="rank-list">${board.top.map(row).join('')}${!inTop && board.mine ? `<li class="gap" aria-hidden="true">⋯</li>${row(board.mine)}` : ''}</ol>
+        <p class="fineprint">Playing as ${esc(player.nickname)} · ranking resets every day</p>`;
+    });
+  }
+
   // ---------- Home ----------
   function renderHome() {
     leave();
@@ -395,6 +469,7 @@ export function boot(app) {
           <p><span class="grade-label" data-grade="${grade.id}">${grade.label}</span> average</p>
         </div>
         ${dailySlots(daily.results)}
+        ${rankingEnabled() ? '<button class="rank-line" id="daily-rank" hidden></button>' : ''}
         <div class="btn-row">
           <button class="btn btn-secondary" id="daily-share">${SHARE_ICON}Share</button>
           <button class="btn btn-secondary" id="daily-review">Review</button>
@@ -505,7 +580,25 @@ export function boot(app) {
     const sameDay = (action) => () => (dateKey() === today ? action() : renderHome());
     if (daily?.done) {
       animateScore(app.querySelector('.daily-score'), dailyAverage);
-      const shared = { mode: 'daily', results: daily.results, score: dailyAverage, dailyNumber: dailyNumber(today), url: siteUrl(), streak };
+      const shared = {
+        mode: 'daily', results: daily.results, score: dailyAverage, dailyNumber: dailyNumber(today), url: siteUrl(), streak,
+        rank: records.ranked(today),
+      };
+      const rankLine = app.querySelector('#daily-rank');
+      if (rankLine) {
+        const showRank = (r) => {
+          if (!r?.place) return;
+          rankLine.innerHTML = `${TROPHY} <b>#${r.place}</b> of ${fmt(r.total)} today <span>${CHEVRON}</span>`;
+          rankLine.hidden = false;
+        };
+        showRank(shared.rank);
+        rankLine.addEventListener('click', sameDay(reviewDaily));
+        refreshRank(today, daily.results).then((r) => {
+          if (token !== session || !r) return;
+          shared.rank = r;
+          showRank(r);
+        });
+      }
       const card = prepareCard(shared);
       app.querySelector('#daily-share').addEventListener('click', sameDay(() => share(shareText(shared), card)));
       app.querySelector('#daily-review').addEventListener('click', sameDay(reviewDaily));
@@ -1048,6 +1141,7 @@ export function boot(app) {
           ${extra}
           ${squares(game.results)}
         </div>
+        ${daily && game.isOver() && rankingEnabled() ? '<section class="card ranking" id="ranking" aria-live="polite"></section>' : ''}
         ${duelBlock}
         <ol class="card results"></ol>
         ${game.results.length > shown.length ? `<p class="more">Showing your last ${MAX_END_ROWS} flags</p>` : ''}
@@ -1094,14 +1188,23 @@ export function boot(app) {
     }
 
     const shared = {
+      rank: daily ? records.ranked(dailyKey) : null,
       mode, pool: game.pool, results: game.results, score, url: siteUrl(),
       dailyNumber: daily ? dailyNumber(dailyKey) : null,
       streak: daily ? records.dailyStreak(dailyKey) : 0,
       bestCombo: game.bestCombo,
       duel: isDuel && duel ? duelOutcome(game.results.map((r) => r.percent), duel.percents) : null,
     };
-    const card = prepareCard(shared);
+    let card = prepareCard(shared);
     app.querySelector('#share').addEventListener('click', () => share(shareText(shared), card));
+    const ranking = app.querySelector('#ranking');
+    if (ranking) {
+      mountRanking(ranking, dailyKey, game.results, (board) => {
+        if (shared.rank?.place === board.place && shared.rank?.total === board.total) return;
+        shared.rank = { place: board.place, total: board.total };
+        card = prepareCard(shared);
+      });
+    }
     app.querySelector('#save-image')?.addEventListener('click', () => saveImage(card));
     app.querySelector('#challenge')?.addEventListener('click', () => {
       const url = duelUrl(siteUrl(), {

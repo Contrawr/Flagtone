@@ -2,6 +2,7 @@
 // Storage may be missing, blocked or full, so every access is guarded and the
 // game works without it.
 import { shiftDay } from './daily.js';
+import { newPlayerId } from './ranking.js';
 import { PERFECT_PERCENT, ROUNDS } from './game.js';
 import { flagByCode } from './flags.js';
 import { GRADES } from './rating.js';
@@ -185,5 +186,28 @@ export class Records {
 
   markHelpSeen() {
     this.write('seenHelp', true);
+  }
+
+  // Daily ranking: a random id for this browser, the chosen nickname, and the
+  // place last seen for a day.
+  player() {
+    let p = this.read('player');
+    if (!p?.id) {
+      p = { id: newPlayerId(), nickname: null };
+      this.write('player', p);
+    }
+    return p;
+  }
+
+  setNickname(nickname) {
+    this.write('player', { ...this.player(), nickname });
+  }
+
+  ranked(day) {
+    return this.read(`ranked:${day}`);
+  }
+
+  saveRanked(day, value) {
+    this.write(`ranked:${day}`, value);
   }
 }

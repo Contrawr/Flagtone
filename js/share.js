@@ -21,7 +21,7 @@ export function gradeSquares(results) {
 }
 
 // Title line, score line, the squares, an optional extra line, then the link.
-export function shareText({ mode, tier, pool = tier, results, score, dailyNumber, url, streak = 0, bestCombo = 0, duel = null }) {
+export function shareText({ mode, tier, pool = tier, results, score, dailyNumber, url, streak = 0, bestCombo = 0, duel = null, rank = null }) {
   const label = POOL_LABELS[pool];
   const pct = (n) => `${n}% · ${gradeFor(n).label}`;
   let title;
@@ -30,6 +30,7 @@ export function shareText({ mode, tier, pool = tier, results, score, dailyNumber
   if (mode === 'daily') {
     title = `🎨 Flagtone Daily #${dailyNumber}`;
     line = pct(score);
+    if (rank?.place) extra.push(`🏆 #${rank.place} of ${rank.total.toLocaleString('en-US')} today`);
     if (streak > 1) extra.push(`🔥 ${streak}-day streak`);
   } else if (mode === 'duel') {
     title = `⚔️ Flagtone Duel · ${label}`;
