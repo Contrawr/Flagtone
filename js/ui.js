@@ -592,6 +592,10 @@ export function boot(app) {
           rankLine.hidden = false;
         };
         showRank(shared.rank);
+        if (!records.player().nickname) {
+          rankLine.innerHTML = `${TROPHY} Join today’s ranking <span>${CHEVRON}</span>`;
+          rankLine.hidden = false;
+        }
         rankLine.addEventListener('click', sameDay(reviewDaily));
         refreshRank(today, daily.results).then((r) => {
           if (token !== session || !r) return;
@@ -1199,6 +1203,9 @@ export function boot(app) {
     app.querySelector('#share').addEventListener('click', () => share(shareText(shared), card));
     const ranking = app.querySelector('#ranking');
     if (ranking) {
+      if (!outcome && !records.player().nickname) {
+        ranking.scrollIntoView?.({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+      }
       mountRanking(ranking, dailyKey, game.results, (board) => {
         if (shared.rank?.place === board.place && shared.rank?.total === board.total) return;
         shared.rank = { place: board.place, total: board.total };
